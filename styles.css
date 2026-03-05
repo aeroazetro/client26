@@ -426,6 +426,38 @@ body {
   font-weight: 600;
 }
 
+.billing-method-details {
+  margin-top: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.billing-proof-row {
+  margin-top: 0.65rem;
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.billing-proof-input {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 0.5rem;
+  min-width: 220px;
+}
+
+.billing-proof-note {
+  margin-top: 0.4rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
 .billing-pay-select {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -576,6 +608,56 @@ body {
 .billing-status.unpaid {
   background: var(--billing-unpaid-soft);
   color: var(--billing-unpaid);
+}
+
+.billing-status.pending {
+  background: rgba(59, 130, 246, 0.14);
+  color: #2563eb;
+}
+
+[data-theme="dark"] .billing-status.pending {
+  background: rgba(96, 165, 250, 0.2);
+  color: #60a5fa;
+}
+
+.billing-pending-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  padding: 0.75rem 0.85rem;
+}
+
+.billing-pending-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.billing-pending-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+
+.billing-pending-actions {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.billing-proof-image {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  max-height: 65vh;
+  object-fit: contain;
 }
 
 .billing-empty {

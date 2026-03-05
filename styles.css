@@ -459,6 +459,17 @@ body {
   color: var(--billing-unpaid);
 }
 
+.billing-client-note {
+  margin-bottom: 1.5rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
 .billing-pricing-note {
   margin-top: 0.65rem;
   color: var(--text-secondary);
@@ -1038,6 +1049,45 @@ body {
   padding: 0.75rem 0.9rem;
   font-size: 0.95rem;
   margin-bottom: 0.75rem;
+}
+
+.billing-role-switcher {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.billing-role-btn {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  padding: 0.55rem 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.billing-role-btn.active {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--text-primary);
+}
+
+.billing-add-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.billing-add-grid .billing-password-input {
+  margin-bottom: 0.6rem;
+}
+
+.billing-field-label {
+  color: var(--text-secondary);
+  font-size: 0.83rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
 }
 
 .billing-password-input:focus {

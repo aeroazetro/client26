@@ -5,6 +5,9 @@ This folder is the Supabase-backed version of your site.
 ## What changed
 - Billing data now syncs through Supabase table `billing_sessions`.
 - If `supabase-config.js` is not configured, app falls back to local browser storage.
+- Billing access is role-based on open:
+  - `Client` (read-only)
+  - `Tutor` (can add sessions + mark paid)
 
 ## Setup
 1. Create a Supabase project.
@@ -15,6 +18,8 @@ This folder is the Supabase-backed version of your site.
 4. Deploy this folder to GitHub Pages.
 
 ## Notes
-- First load seeds Supabase from `billing-logs.csv` (or built-in fallback data) if the table is empty.
+- First load seeds Supabase from `billing-logs.csv` if the table is empty.
 - Bulk payment updates are synced to Supabase in FIFO order.
-- Password for billing screen is still managed in `script.js` (`BILLING_PASSWORD`).
+- Passwords are managed in `script.js`:
+  - `BILLING_CLIENT_PASSWORD` (default `climb123`)
+  - `BILLING_TUTOR_PASSWORD` (default `teach123`)

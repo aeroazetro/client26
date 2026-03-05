@@ -213,13 +213,22 @@
                 </div>
             </div>
 
-            <div id="billing-admin-controls" class="billing-payment-controls">
+            <div id="billing-client-controls" class="billing-payment-controls">
                 <div class="billing-payment-row">
-                    <label for="billing-pay-count">Mark earliest unpaid session logs as paid:</label>
+                    <label for="billing-pay-count">Sessions to pay now:</label>
                     <select id="billing-pay-count" class="billing-pay-select"></select>
-                    <button class="btn btn-primary billing-pay-btn" onclick="applyBulkPayment()">Apply Payment</button>
-                    <button class="btn btn-secondary" onclick="openBillingAddSessionModal()">+ Add Session</button>
+                    <label for="billing-payment-method">Method:</label>
+                    <select id="billing-payment-method" class="billing-pay-select">
+                        <option value="gotyme">GoTyme</option>
+                        <option value="gcash">GCash</option>
+                    </select>
                 </div>
+                <div id="billing-method-details" class="billing-method-details"></div>
+                <div class="billing-proof-row">
+                    <input id="billing-proof-file" type="file" accept="image/jpeg,image/png" class="billing-proof-input">
+                    <button class="btn btn-primary billing-pay-btn" onclick="submitPaymentProof()">Submit Payment Proof</button>
+                </div>
+                <div class="billing-proof-note">Allowed proof file: JPG/PNG only, max 2MB. Older proof files are auto-deleted after 6 months.</div>
                 <div class="billing-pricing-note">Pricing: 1 session = ₱500 | 10-session bundle = ₱4,500 (save ₱500)</div>
                 <div class="billing-discount-meter">
                     <div class="billing-discount-track">
@@ -229,7 +238,15 @@
                 </div>
                 <div id="billing-payment-status" class="billing-payment-status hidden"></div>
             </div>
-            <div id="billing-client-note" class="billing-client-note hidden">Client view: read-only billing records.</div>
+
+            <div id="billing-admin-controls" class="billing-payment-controls">
+                <div class="billing-payment-row">
+                    <label>Tutor tools:</label>
+                    <button class="btn btn-primary billing-pay-btn" onclick="applyBulkPayment()">Apply Payment</button>
+                    <button class="btn btn-secondary" onclick="openBillingAddSessionModal()">+ Add Session</button>
+                </div>
+            </div>
+            <div id="billing-client-note" class="billing-client-note hidden">Client role: submit proof only. Tutor approves pending proofs.</div>
 
             <div class="card-grid billing-grid">
                 <div class="card billing-card static-card">
@@ -243,6 +260,12 @@
                     <p style="margin-bottom: 1rem;">Complete payment history (paid + unpaid).</p>
                     <div id="billing-log-list" class="billing-list"></div>
                 </div>
+            </div>
+
+            <div id="billing-pending-card" class="card static-card billing-methods-card">
+                <h3>Pending Proofs</h3>
+                <p style="margin-bottom: 1rem;">Submitted payments waiting for tutor approval.</p>
+                <div id="billing-pending-list" class="billing-list"></div>
             </div>
 
             <div class="card static-card billing-methods-card">
@@ -322,6 +345,17 @@
                 <div class="billing-password-actions">
                     <button class="btn btn-secondary billing-action-btn" onclick="closeBillingAddSessionModal()">Cancel</button>
                     <button class="btn btn-primary billing-action-btn" onclick="submitBillingAddSession()">Save Session</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="billing-proof-modal" class="modal-overlay hidden" style="z-index: 270;">
+            <div class="modal-content billing-password-content">
+                <h3 style="margin-bottom: 0.5rem;">Payment Proof</h3>
+                <p id="billing-proof-meta" style="color: var(--text-secondary); margin-bottom: 0.75rem;"></p>
+                <img id="billing-proof-image" class="billing-proof-image" alt="Payment proof">
+                <div class="billing-password-actions">
+                    <button class="btn btn-secondary billing-action-btn" onclick="closeBillingProofModal()">Close</button>
                 </div>
             </div>
         </div>

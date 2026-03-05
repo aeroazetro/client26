@@ -20,6 +20,7 @@ const BILLING_ROLE_KEY = 'billingRole';
 let billingRole = sessionStorage.getItem(BILLING_ROLE_KEY) || '';
 let billingUnlocked = billingRole === 'client' || billingRole === 'tutor';
 let selectedBillingRole = 'client';
+let billingHistoryFilter = 'all';
 let billingSessions = [];
 let supabaseClient = null;
 let billingPersistenceMode = 'local';
@@ -173,6 +174,13 @@ function initPaymentCountSelector() {
         proofInput.addEventListener('change', () => {
             setBillingPaymentStatus('');
             updateProofFileState();
+        });
+    }
+    const historyFilterSelect = document.getElementById('billing-history-filter');
+    if (historyFilterSelect) {
+        historyFilterSelect.addEventListener('change', () => {
+            billingHistoryFilter = historyFilterSelect.value || 'all';
+            renderPaymentHistory();
         });
     }
     renderPaymentMethodDetails();
@@ -581,6 +589,54 @@ function groupApprovedBatches(rows) {
     });
 }
 
+function getHistoryMonthKey(group) {
+    const source = group.approvedAt || group.submittedAt || '';
+    const date = new Date(source);
+    if (Number.isNaN(date.getTime())) return '';
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    return `${yyyy}-${mm}`;
+}
+
+function formatHistoryMonthLabel(monthKey) {
+    const [yearStr, monthStr] = monthKey.split('-');
+    const year = Number.parseInt(yearStr || '', 10);
+    const month = Number.parseInt(monthStr || '', 10);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+        return monthKey;
+    }
+    const date = new Date(year, month - 1, 1);
+    return date.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+}
+
+function syncHistoryFilterOptions(groups) {
+    const select = document.getElementById('billing-history-filter');
+    if (!select) return;
+
+    const keys = [...new Set(groups.map(getHistoryMonthKey).filter(Boolean))];
+    keys.sort((a, b) => (a < b ? 1 : -1));
+
+    const allowed = new Set(['all', ...keys]);
+    if (!allowed.has(billingHistoryFilter)) {
+        billingHistoryFilter = 'all';
+    }
+
+    select.innerHTML = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = 'all';
+    allOpt.textContent = 'All';
+    select.appendChild(allOpt);
+
+    keys.forEach(key => {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = formatHistoryMonthLabel(key);
+        select.appendChild(opt);
+    });
+
+    select.value = billingHistoryFilter;
+}
+
 async function cleanupExpiredProofs() {
     if (!hasSupabaseBilling()) return;
     const now = new Date();
@@ -673,17 +729,21 @@ function renderBillingList(targetId, sessions, emptyText, sortOrder = 'desc') {
     });
     sorted.forEach(item => {
         const amount = getSessionAmount(item);
-        const topicText = item.topic ? ` • ${item.topic}` : '';
+        const topicText = item.topic || 'No topic';
         const entry = document.createElement('div');
         entry.className = `billing-item ${item.status}`;
         entry.innerHTML = `
-            <div class="billing-item-top">
+            <div class="billing-item-head">
                 <span class="billing-item-date">${item.date} ${item.time}</span>
+                <strong class="billing-item-amount">${formatPeso(amount)}</strong>
+            </div>
+            <div class="billing-item-top">
+                <span class="billing-item-name">${item.tutee}</span>
                 <span class="billing-status ${item.status}">${item.status.toUpperCase()}</span>
             </div>
-            <div class="billing-item-bottom">
-                <span>${item.tutee} • ${formatHours(item.hours)}${topicText}</span>
-                <strong>${formatPeso(amount)}</strong>
+            <div class="billing-item-meta">
+                <span class="billing-meta-pill">Duration: ${formatHours(item.hours)}</span>
+                <span class="billing-meta-pill">Topic: ${topicText}</span>
             </div>
         `;
         list.appendChild(entry);
@@ -745,6 +805,8 @@ function renderPaymentHistory() {
     list.innerHTML = '';
 
     const groups = groupApprovedBatches(billingSessions);
+    syncHistoryFilterOptions(groups);
+
     if (!groups.length) {
         const empty = document.createElement('div');
         empty.className = 'billing-empty';
@@ -753,7 +815,19 @@ function renderPaymentHistory() {
         return;
     }
 
-    groups.forEach(group => {
+    const filteredGroups = billingHistoryFilter === 'all'
+        ? groups
+        : groups.filter(group => getHistoryMonthKey(group) === billingHistoryFilter);
+
+    if (!filteredGroups.length) {
+        const empty = document.createElement('div');
+        empty.className = 'billing-empty';
+        empty.textContent = `No approved payments for ${formatHistoryMonthLabel(billingHistoryFilter)}.`;
+        list.appendChild(empty);
+        return;
+    }
+
+    filteredGroups.forEach(group => {
         const wrapper = document.createElement('div');
         wrapper.className = 'billing-pending-item';
         const methodLabel = PAYMENT_METHOD_DETAILS[group.method] ? PAYMENT_METHOD_DETAILS[group.method].label : 'Payment';
@@ -782,7 +856,6 @@ function renderPaymentHistory() {
 
 function renderBillingDashboard() {
     const unpaidSessions = billingSessions.filter(item => item.status === 'unpaid');
-    const unpaidTotal = unpaidSessions.reduce((sum, item) => sum + getSessionAmount(item), 0);
     const clientControls = document.getElementById('billing-client-controls');
     const adminControls = document.getElementById('billing-admin-controls');
     const clientNote = document.getElementById('billing-client-note');
@@ -794,11 +867,9 @@ function renderBillingDashboard() {
     if (clientNote) clientNote.classList.toggle('hidden', isTutor);
     if (pendingCard) pendingCard.classList.remove('hidden');
 
-    const totalUnpaidEl = document.getElementById('billing-total-unpaid');
     const unpaidCountEl = document.getElementById('billing-unpaid-count');
     const totalLogsEl = document.getElementById('billing-total-logs');
 
-    if (totalUnpaidEl) totalUnpaidEl.textContent = formatPeso(unpaidTotal);
     if (unpaidCountEl) unpaidCountEl.textContent = String(unpaidSessions.length);
     if (totalLogsEl) totalLogsEl.textContent = String(billingSessions.length);
 
@@ -890,6 +961,7 @@ async function submitPaymentProof() {
     if (proofInput) proofInput.value = '';
     updateProofFileState();
     saveBillingSessions();
+    closeBillingPayModal();
     renderBillingDashboard();
     setBillingPaymentStatus(`Proof submitted for ${formatSessionCount(requested)} (${formatPeso(breakdown.discountedTotal)}). Status is now PENDING.`, false);
     const pendingCard = document.getElementById('billing-pending-card');
@@ -968,6 +1040,24 @@ function closeBillingProofModal() {
     modal.classList.remove('active');
     setTimeout(() => modal.classList.add('hidden'), 300);
     if (image) image.src = '';
+}
+
+function openBillingPayModal() {
+    const modal = document.getElementById('billing-pay-modal');
+    if (!modal) return;
+    setBillingPaymentStatus('');
+    updateProofFileState();
+    renderPaymentMethodDetails();
+    updateDiscountMeter();
+    modal.classList.remove('hidden');
+    setTimeout(() => modal.classList.add('active'), 10);
+}
+
+function closeBillingPayModal() {
+    const modal = document.getElementById('billing-pay-modal');
+    if (!modal) return;
+    modal.classList.remove('active');
+    setTimeout(() => modal.classList.add('hidden'), 300);
 }
 
 async function applyBulkPayment() {
@@ -1606,6 +1696,7 @@ window.onclick = function (event) {
     const billingModal = document.getElementById('billing-password-modal');
     const addSessionModal = document.getElementById('billing-add-modal');
     const proofModal = document.getElementById('billing-proof-modal');
+    const payModal = document.getElementById('billing-pay-modal');
     if (event.target === quickRefModal) {
         closeQuickRef();
     }
@@ -1617,6 +1708,9 @@ window.onclick = function (event) {
     }
     if (event.target === proofModal) {
         closeBillingProofModal();
+    }
+    if (event.target === payModal) {
+        closeBillingPayModal();
     }
 }
 

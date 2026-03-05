@@ -213,11 +213,12 @@
                 </div>
             </div>
 
-            <div class="billing-payment-controls">
+            <div id="billing-admin-controls" class="billing-payment-controls">
                 <div class="billing-payment-row">
                     <label for="billing-pay-count">Mark earliest unpaid session logs as paid:</label>
                     <select id="billing-pay-count" class="billing-pay-select"></select>
                     <button class="btn btn-primary billing-pay-btn" onclick="applyBulkPayment()">Apply Payment</button>
+                    <button class="btn btn-secondary" onclick="openBillingAddSessionModal()">+ Add Session</button>
                 </div>
                 <div class="billing-pricing-note">Pricing: 1 session = ₱500 | 10-session bundle = ₱4,500 (save ₱500)</div>
                 <div class="billing-discount-meter">
@@ -228,6 +229,7 @@
                 </div>
                 <div id="billing-payment-status" class="billing-payment-status hidden"></div>
             </div>
+            <div id="billing-client-note" class="billing-client-note hidden">Client view: read-only billing records.</div>
 
             <div class="card-grid billing-grid">
                 <div class="card billing-card static-card">
@@ -280,8 +282,14 @@
         <div id="billing-password-modal" class="modal-overlay hidden" style="z-index: 250;">
             <div class="modal-content billing-password-content">
                 <h3 style="margin-bottom: 0.75rem;">Billing Access</h3>
-                <p style="color: var(--text-secondary); margin-bottom: 1rem;">Enter password to view payment records.
+                <p style="color: var(--text-secondary); margin-bottom: 1rem;">Choose access level and enter password.
                 </p>
+                <div id="billing-role-switcher" class="billing-role-switcher">
+                    <button id="billing-role-client" type="button" class="billing-role-btn active"
+                        onclick="selectBillingRole('client')">Client</button>
+                    <button id="billing-role-tutor" type="button" class="billing-role-btn"
+                        onclick="selectBillingRole('tutor')">Tutor</button>
+                </div>
                 <input id="billing-password-input" type="password" class="billing-password-input"
                     placeholder="Enter password" onkeydown="handleBillingPasswordKeydown(event)">
                 <div id="billing-password-error" class="billing-password-error hidden">Incorrect password. Try again.
@@ -289,6 +297,31 @@
                 <div class="billing-password-actions">
                     <button class="btn btn-secondary billing-action-btn" onclick="closeBillingPasswordModal()">Cancel</button>
                     <button class="btn btn-primary billing-action-btn" onclick="submitBillingPassword()">Unlock</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="billing-add-modal" class="modal-overlay hidden" style="z-index: 260;">
+            <div class="modal-content billing-password-content">
+                <h3 style="margin-bottom: 0.75rem;">Add Session</h3>
+                <p style="color: var(--text-secondary); margin-bottom: 1rem;">Tutor-only: create a new billing session log.</p>
+                <div class="billing-add-grid">
+                    <label class="billing-field-label" for="billing-add-date">Date</label>
+                    <input id="billing-add-date" type="date" class="billing-password-input">
+                    <label class="billing-field-label" for="billing-add-time">Time</label>
+                    <input id="billing-add-time" type="time" class="billing-password-input">
+                    <label class="billing-field-label" for="billing-add-tutee">Tutee</label>
+                    <input id="billing-add-tutee" type="text" class="billing-password-input" placeholder="JC">
+                    <label class="billing-field-label" for="billing-add-status">Status</label>
+                    <select id="billing-add-status" class="billing-password-input">
+                        <option value="unpaid" selected>Unpaid</option>
+                        <option value="paid">Paid</option>
+                    </select>
+                </div>
+                <div id="billing-add-error" class="billing-password-error hidden"></div>
+                <div class="billing-password-actions">
+                    <button class="btn btn-secondary billing-action-btn" onclick="closeBillingAddSessionModal()">Cancel</button>
+                    <button class="btn btn-primary billing-action-btn" onclick="submitBillingAddSession()">Save Session</button>
                 </div>
             </div>
         </div>

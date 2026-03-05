@@ -214,17 +214,22 @@
             </div>
 
             <div id="billing-client-controls" class="billing-payment-controls">
-                <div class="billing-payment-row">
-                    <label for="billing-pay-count">Sessions to pay now:</label>
-                    <select id="billing-pay-count" class="billing-pay-select"></select>
-                    <label for="billing-payment-method">Method:</label>
-                    <select id="billing-payment-method" class="billing-pay-select">
-                        <option value="gotyme">GoTyme</option>
-                        <option value="gcash">GCash</option>
-                    </select>
+                <div class="billing-form-grid">
+                    <div class="billing-field">
+                        <label class="billing-field-label" for="billing-pay-count">Sessions to pay now</label>
+                        <select id="billing-pay-count" class="billing-pay-select"></select>
+                    </div>
+                    <div class="billing-field">
+                        <label class="billing-field-label" for="billing-payment-method">Payment method</label>
+                        <select id="billing-payment-method" class="billing-pay-select">
+                            <option value="gotyme">GoTyme</option>
+                            <option value="gcash">GCash</option>
+                        </select>
+                    </div>
                 </div>
                 <div id="billing-method-details" class="billing-method-details"></div>
                 <div class="billing-proof-row">
+                    <label class="billing-field-label billing-proof-label" for="billing-proof-file">Upload proof</label>
                     <input id="billing-proof-file" type="file" accept="image/jpeg,image/png" class="billing-proof-input">
                     <button class="btn btn-primary billing-pay-btn" onclick="submitPaymentProof()">Submit Payment Proof</button>
                 </div>

@@ -200,10 +200,6 @@
 
             <div class="billing-summary-grid">
                 <div class="billing-summary-card">
-                    <div class="summary-label">Total Unpaid Amount</div>
-                    <div id="billing-total-unpaid" class="summary-value">₱0</div>
-                </div>
-                <div class="billing-summary-card">
                     <div class="summary-label">Unpaid Sessions</div>
                     <div id="billing-unpaid-count" class="summary-value">0</div>
                 </div>
@@ -214,34 +210,9 @@
             </div>
 
             <div id="billing-client-controls" class="billing-payment-controls">
-                <div class="billing-form-grid">
-                    <div class="billing-field">
-                        <label class="billing-field-label" for="billing-pay-count">Sessions to pay now</label>
-                        <select id="billing-pay-count" class="billing-pay-select"></select>
-                    </div>
-                    <div class="billing-field">
-                        <label class="billing-field-label" for="billing-payment-method">Payment method</label>
-                        <select id="billing-payment-method" class="billing-pay-select">
-                            <option value="gotyme">GoTyme</option>
-                            <option value="gcash">GCash</option>
-                        </select>
-                    </div>
-                </div>
-                <div id="billing-method-details" class="billing-method-details"></div>
-                <div class="billing-proof-row">
-                    <label class="billing-field-label billing-proof-label" for="billing-proof-file">Upload proof</label>
-                    <input id="billing-proof-file" type="file" accept="image/jpeg,image/png" class="billing-proof-input">
-                    <button class="btn btn-primary billing-pay-btn" onclick="submitPaymentProof()">Submit Payment Proof</button>
-                </div>
-                <div id="billing-proof-file-state" class="billing-proof-file-state">No file selected.</div>
-                <div class="billing-proof-note">JPG/PNG only, max 2MB. Auto-delete after 6 months.</div>
-                <div class="billing-pricing-note">₱500/session | 10 sessions = ₱4,500 (save ₱500)</div>
-                <div id="billing-bundle-chip" class="billing-bundle-chip hidden"></div>
-                <div class="billing-discount-meter">
-                    <div class="billing-discount-track">
-                        <div id="billing-discount-fill" class="billing-discount-fill"></div>
-                    </div>
-                    <div id="billing-discount-text" class="billing-discount-text"></div>
+                <div class="billing-payment-row">
+                    <button class="btn btn-primary billing-pay-btn" onclick="openBillingPayModal()">Pay & Upload Proof</button>
+                    <span class="billing-proof-note">JPG/PNG only, max 2MB. Proofs auto-delete after 6 months.</span>
                 </div>
                 <div id="billing-payment-status" class="billing-payment-status hidden"></div>
             </div>
@@ -276,8 +247,18 @@
             </div>
 
             <div id="billing-history-card" class="card static-card billing-methods-card">
-                <h3>Payment History</h3>
-                <p style="margin-bottom: 1rem;">Approved payments with proof and transaction details.</p>
+                <div class="billing-history-head">
+                    <div>
+                        <h3>Payment History</h3>
+                        <p style="margin-bottom: 1rem;">Approved payments with proof and transaction details.</p>
+                    </div>
+                    <div class="billing-history-filter-wrap">
+                        <label class="billing-field-label" for="billing-history-filter">Filter</label>
+                        <select id="billing-history-filter" class="billing-pay-select">
+                            <option value="all">All</option>
+                        </select>
+                    </div>
+                </div>
                 <div id="billing-history-list" class="billing-list"></div>
             </div>
 
@@ -373,6 +354,43 @@
                 <img id="billing-proof-image" class="billing-proof-image" alt="Payment proof">
                 <div class="billing-password-actions">
                     <button class="btn btn-secondary billing-action-btn" onclick="closeBillingProofModal()">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="billing-pay-modal" class="modal-overlay hidden" style="z-index: 275;">
+            <div class="modal-content billing-password-content billing-pay-content">
+                <h3 style="margin-bottom: 0.5rem;">Submit Payment Proof</h3>
+                <div class="billing-form-grid">
+                    <div class="billing-field">
+                        <label class="billing-field-label" for="billing-pay-count">Sessions to pay</label>
+                        <select id="billing-pay-count" class="billing-pay-select"></select>
+                    </div>
+                    <div class="billing-field">
+                        <label class="billing-field-label" for="billing-payment-method">Payment method</label>
+                        <select id="billing-payment-method" class="billing-pay-select">
+                            <option value="gotyme">GoTyme</option>
+                            <option value="gcash">GCash</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="billing-method-details" class="billing-method-details"></div>
+                <div class="billing-proof-row">
+                    <label class="billing-field-label billing-proof-label" for="billing-proof-file">Upload proof</label>
+                    <input id="billing-proof-file" type="file" accept="image/jpeg,image/png" class="billing-proof-input">
+                </div>
+                <div id="billing-proof-file-state" class="billing-proof-file-state">No file selected.</div>
+                <div class="billing-pricing-note">₱500/session | 10 sessions = ₱4,500 (save ₱500)</div>
+                <div id="billing-bundle-chip" class="billing-bundle-chip hidden"></div>
+                <div class="billing-discount-meter">
+                    <div class="billing-discount-track">
+                        <div id="billing-discount-fill" class="billing-discount-fill"></div>
+                    </div>
+                    <div id="billing-discount-text" class="billing-discount-text"></div>
+                </div>
+                <div class="billing-password-actions">
+                    <button class="btn btn-secondary billing-action-btn" onclick="closeBillingPayModal()">Cancel</button>
+                    <button class="btn btn-primary billing-action-btn" onclick="submitPaymentProof()">Submit Payment Proof</button>
                 </div>
             </div>
         </div>

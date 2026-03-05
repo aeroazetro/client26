@@ -233,8 +233,10 @@
                     <input id="billing-proof-file" type="file" accept="image/jpeg,image/png" class="billing-proof-input">
                     <button class="btn btn-primary billing-pay-btn" onclick="submitPaymentProof()">Submit Payment Proof</button>
                 </div>
-                <div class="billing-proof-note">Allowed proof file: JPG/PNG only, max 2MB. Older proof files are auto-deleted after 6 months.</div>
-                <div class="billing-pricing-note">Pricing: 1 session = ₱500 | 10-session bundle = ₱4,500 (save ₱500)</div>
+                <div id="billing-proof-file-state" class="billing-proof-file-state">No file selected.</div>
+                <div class="billing-proof-note">JPG/PNG only, max 2MB. Auto-delete after 6 months.</div>
+                <div class="billing-pricing-note">₱500/session | 10 sessions = ₱4,500 (save ₱500)</div>
+                <div id="billing-bundle-chip" class="billing-bundle-chip hidden"></div>
                 <div class="billing-discount-meter">
                     <div class="billing-discount-track">
                         <div id="billing-discount-fill" class="billing-discount-fill"></div>
@@ -271,6 +273,12 @@
                 <h3>Pending Proofs</h3>
                 <p style="margin-bottom: 1rem;">Submitted payments waiting for tutor approval.</p>
                 <div id="billing-pending-list" class="billing-list"></div>
+            </div>
+
+            <div id="billing-history-card" class="card static-card billing-methods-card">
+                <h3>Payment History</h3>
+                <p style="margin-bottom: 1rem;">Approved payments with proof and transaction details.</p>
+                <div id="billing-history-list" class="billing-list"></div>
             </div>
 
             <div class="card static-card billing-methods-card">
@@ -340,6 +348,10 @@
                     <input id="billing-add-time" type="time" class="billing-password-input">
                     <label class="billing-field-label" for="billing-add-tutee">Tutee</label>
                     <input id="billing-add-tutee" type="text" class="billing-password-input" placeholder="JC">
+                    <label class="billing-field-label" for="billing-add-topic">Topic (optional)</label>
+                    <input id="billing-add-topic" type="text" class="billing-password-input" placeholder="e.g., Circle theorems">
+                    <label class="billing-field-label" for="billing-add-hours">Hours</label>
+                    <input id="billing-add-hours" type="number" min="0.5" step="0.5" value="1" class="billing-password-input">
                     <label class="billing-field-label" for="billing-add-status">Status</label>
                     <select id="billing-add-status" class="billing-password-input">
                         <option value="unpaid" selected>Unpaid</option>

@@ -1,528 +1,1110 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
+let currentSubject = 'geometry';
+let currentTest = 'module1';
+let currentQuestionIndex = 0;
+let score = 0;
+let activeRefTab = 'geometry';
+const SINGLE_SESSION_PRICE = 500;
+const BUNDLE_SIZE = 10;
+const BUNDLE_PRICE = 4500;
+const BILLING_LOGS_FILE = 'billing-logs.csv';
+const BILLING_TABLE = 'billing_sessions';
+const BILLING_CLIENT_PASSWORD = 'climb123'; // Change client password here.
+const BILLING_TUTOR_PASSWORD = 'teach123'; // Change tutor password here.
+const BILLING_STORAGE_KEY = 'billingSessionsStateV1';
+const BILLING_STORAGE_VERSION_KEY = 'billingSessionsStateVersionV1';
+const BILLING_STORAGE_VERSION = '2026-03-05-supabase-bundle-pricing';
+const BILLING_ROLE_KEY = 'billingRole';
+let billingRole = sessionStorage.getItem(BILLING_ROLE_KEY) || '';
+let billingUnlocked = billingRole === 'client' || billingRole === 'tutor';
+let selectedBillingRole = 'client';
+let billingSessions = [];
+let supabaseClient = null;
+let billingPersistenceMode = 'local';
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Math 8 Reviewer | PSHS Prep</title>
-    <link rel="stylesheet" href="styles.css">
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&display=swap"
-        rel="stylesheet">
+// Theme Logic
+// 1. Check LocalStorage
+// 2. Fallback to System Preference
+const getPreferredTheme = () => {
+    const saved = localStorage.getItem('theme');
+    if (saved) return saved;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+};
 
-    <!-- KaTeX for LaTeX Rendering -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
-</head>
+const savedTheme = getPreferredTheme();
+document.documentElement.setAttribute('data-theme', savedTheme);
 
-<body>
+function getSupabaseConfig() {
+    const config = window.SUPABASE_CONFIG || {};
+    const url = (config.url || '').trim();
+    const anonKey = (config.anonKey || '').trim();
+    const hasValidUrl = url && !url.includes('YOUR-PROJECT') && !url.includes('your-project');
+    const hasValidAnon = anonKey && !anonKey.includes('YOUR-ANON-KEY') && !anonKey.includes('your-anon-key');
+    if (!hasValidUrl || !hasValidAnon) {
+        return null;
+    }
+    return { url, anonKey };
+}
 
-    <!-- Global Header -->
-    <header class="site-header">
-        <div class="container">
-            <a href="#" class="site-logo" onclick="navTo('landing'); return false;">
-                PSHS MATH
-            </a>
-            <nav class="site-nav">
-                <a onclick="scrollToSection('subject-list')">Modules</a>
-                <a onclick="openQuickRef()">Quick Reference</a>
-                <a onclick="openBilling()">Billing</a>
-                <a href="https://aeroazetro.github.io/portfolio/" target="_blank">Tutor</a>
-                <a href="https://www.figma.com/board/5ARdN53DoMWxWeNRk2jPqd/ian?node-id=0-1&t=1V2WYpVSJ9FpJnUj-1"
-                    target="_blank">Whiteboard</a>
-                <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle Dark Mode">
-                    <span id="theme-icon">🌙</span>
-                </button>
-            </nav>
-        </div>
-    </header>
+function initSupabaseClient() {
+    const cfg = getSupabaseConfig();
+    if (!cfg || !window.supabase || typeof window.supabase.createClient !== 'function') {
+        billingPersistenceMode = 'local';
+        return;
+    }
+    supabaseClient = window.supabase.createClient(cfg.url, cfg.anonKey, {
+        auth: {
+            persistSession: false,
+            autoRefreshToken: false
+        }
+    });
+    billingPersistenceMode = 'supabase';
+}
 
-    <main>
-        <!-- LANDING PAGE -->
-        <section id="landing" class="view-section">
+function hasSupabaseBilling() {
+    return !!supabaseClient;
+}
 
-            <!-- Hero with Wave -->
-            <div class="hero">
-                <div class="hero-content">
-                    <h1>Intermediate Algebra</h1>
-                    <p>Rigorous preparation for the PSHS curriculum. Master linear systems, functions, and analytic
-                        geometry.</p>
-                    <div class="hero-buttons">
-                        <button class="btn btn-primary" onclick="scrollToSection('subject-list')">Start
-                            Learning</button>
-                        <button class="btn btn-secondary" onclick="openQuickRef()">Quick Reference</button>
-                    </div>
-                </div>
+function isTutorAccess() {
+    return billingRole === 'tutor';
+}
 
+function setBillingRole(role) {
+    billingRole = role;
+    billingUnlocked = role === 'client' || role === 'tutor';
+    sessionStorage.removeItem('billingUnlocked');
+    if (billingUnlocked) {
+        sessionStorage.setItem(BILLING_ROLE_KEY, role);
+    } else {
+        sessionStorage.removeItem(BILLING_ROLE_KEY);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log("Script loaded successfully");
+    const icon = document.getElementById('theme-icon');
+    if (icon) icon.textContent = savedTheme === 'light' ? '🌙' : '☀️';
+    initSupabaseClient();
+    initPaymentCountSelector();
+    await loadBillingSessions();
+    renderBillingDashboard();
+});
+
+window.toggleTheme = function () {
+    const html = document.documentElement;
+    const current = html.getAttribute('data-theme');
+    const next = current === 'light' ? 'dark' : 'light';
+    html.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+
+    const icon = document.getElementById('theme-icon');
+    if (icon) icon.textContent = next === 'light' ? '🌙' : '☀️';
+}
+
+function parseBillingSessionsCSV(data) {
+    if (!data) return [];
+    const lines = data.trim().split('\n').slice(1);
+    return lines.map((line, idx) => {
+        const [date, time, tutee, sessions, status] = line.split(',');
+        return normalizeBillingRow({
+            date,
+            time,
+            tutee,
+            sessions,
+            status
+        }, idx);
+    }).filter(item => item.date && item.time && item.tutee);
+}
+
+function initPaymentCountSelector() {
+    const select = document.getElementById('billing-pay-count');
+    if (!select) return;
+    select.innerHTML = '';
+    for (let i = 1; i <= 10; i++) {
+        const option = document.createElement('option');
+        option.value = String(i);
+        option.textContent = `${i} session${i === 1 ? '' : 's'}`;
+        select.appendChild(option);
+    }
+    select.value = '1';
+    select.addEventListener('change', () => {
+        updateDiscountMeter();
+        setBillingPaymentStatus('');
+    });
+    updateDiscountMeter();
+}
+
+async function loadBillingSessions() {
+    if (hasSupabaseBilling()) {
+        try {
+            const remoteRows = await loadBillingSessionsFromSupabase();
+            if (remoteRows.length > 0) {
+                billingSessions = remoteRows;
+                saveBillingSessions();
+                return;
+            }
+
+            // First run on a fresh database: seed from billing-logs.csv if available.
+            const seedRows = await loadBillingSessionsFromFile();
+            billingSessions = await seedSupabaseBilling(seedRows);
+            saveBillingSessions();
+            return;
+        } catch (error) {
+            console.warn('Supabase billing load failed. Falling back to local storage.', error);
+            billingPersistenceMode = 'local';
+            supabaseClient = null;
+        }
+    }
+
+    try {
+        const saved = localStorage.getItem(BILLING_STORAGE_KEY);
+        const savedVersion = localStorage.getItem(BILLING_STORAGE_VERSION_KEY);
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            if (savedVersion === BILLING_STORAGE_VERSION && Array.isArray(parsed) && parsed.every(row => row && row.date && row.time && row.tutee)) {
+                billingSessions = parsed.map((row, idx) => normalizeBillingRow(row, idx));
+                return;
+            }
+        }
+    } catch (error) {
+        console.warn('Failed to load billing sessions from storage. Reverting to file seed.', error);
+    }
+    billingSessions = await loadBillingSessionsFromFile();
+    saveBillingSessions();
+}
+
+async function loadBillingSessionsFromSupabase() {
+    if (!hasSupabaseBilling()) return [];
+    const { data, error } = await supabaseClient
+        .from(BILLING_TABLE)
+        .select('id,date,time,tutee,sessions,status,sort_order')
+        .order('date', { ascending: true })
+        .order('time', { ascending: true })
+        .order('sort_order', { ascending: true });
+    if (error) throw error;
+    if (!Array.isArray(data)) return [];
+    return data.map((row, idx) => normalizeBillingRow({
+        id: row.id,
+        date: row.date,
+        time: row.time,
+        tutee: row.tutee,
+        sessions: row.sessions,
+        status: row.status,
+        sort_order: row.sort_order
+    }, idx));
+}
+
+async function seedSupabaseBilling(seedRows) {
+    if (!hasSupabaseBilling()) return seedRows;
+    if (!Array.isArray(seedRows) || !seedRows.length) return [];
+    const payload = seedRows.map((row, idx) => ({
+        date: row.date,
+        time: row.time,
+        tutee: row.tutee,
+        sessions: 1,
+        status: row.status,
+        sort_order: idx
+    }));
+    const { data, error } = await supabaseClient
+        .from(BILLING_TABLE)
+        .insert(payload)
+        .select('id,date,time,tutee,sessions,status,sort_order');
+    if (error) throw error;
+    return (data || []).map((row, idx) => normalizeBillingRow({
+        id: row.id,
+        date: row.date,
+        time: row.time,
+        tutee: row.tutee,
+        sessions: row.sessions,
+        status: row.status,
+        sort_order: row.sort_order
+    }, idx));
+}
+
+async function loadBillingSessionsFromFile() {
+    try {
+        const response = await fetch(BILLING_LOGS_FILE, { cache: 'no-store' });
+        if (!response.ok) return [];
+        const csvText = await response.text();
+        return parseBillingSessionsCSV(csvText);
+    } catch (error) {
+        return [];
+    }
+}
+
+function saveBillingSessions() {
+    try {
+        localStorage.setItem(BILLING_STORAGE_KEY, JSON.stringify(billingSessions));
+        localStorage.setItem(BILLING_STORAGE_VERSION_KEY, BILLING_STORAGE_VERSION);
+    } catch (error) {
+        console.warn('Failed to save billing sessions state.', error);
+    }
+}
+
+function setBillingPaymentStatus(message = '', isError = false) {
+    const statusEl = document.getElementById('billing-payment-status');
+    if (!statusEl) return;
+    if (!message) {
+        statusEl.classList.add('hidden');
+        statusEl.classList.remove('is-error', 'is-success');
+        statusEl.textContent = '';
+        return;
+    }
+    statusEl.classList.remove('hidden');
+    statusEl.classList.toggle('is-error', isError);
+    statusEl.classList.toggle('is-success', !isError);
+    statusEl.textContent = message;
+}
+
+function formatPeso(amount) {
+    return `₱${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatSessionCount(count) {
+    return `${count} session${count === 1 ? '' : 's'}`;
+}
+
+function normalizeBillingRow(row, index) {
+    const parsedOrder = Number(row.sort_order);
+    const normalizedTime = (row.time || '').trim().slice(0, 5);
+    const normalizedDate = (row.date || '').trim();
+    return {
+        id: Number.isFinite(Number(row.id)) ? Number(row.id) : null,
+        date: normalizedDate,
+        time: normalizedTime,
+        tutee: (row.tutee || '').trim(),
+        // Billing is now strictly tracked per session-log unit for 1-10 payments.
+        sessions: 1,
+        status: ((row.status || '').trim().toLowerCase() === 'paid') ? 'paid' : 'unpaid',
+        order: Number.isFinite(parsedOrder)
+            ? parsedOrder
+            : (Number.isFinite(Number(row.order)) ? Number(row.order) : index)
+    };
+}
+
+function calculatePaymentBreakdown(sessionCount) {
+    const sanitizedCount = Math.max(0, Math.floor(sessionCount));
+    const bundles = Math.floor(sanitizedCount / BUNDLE_SIZE);
+    const singles = sanitizedCount % BUNDLE_SIZE;
+    const baseTotal = sanitizedCount * SINGLE_SESSION_PRICE;
+    const discountedTotal = (bundles * BUNDLE_PRICE) + (singles * SINGLE_SESSION_PRICE);
+    return {
+        sessionCount: sanitizedCount,
+        bundles,
+        singles,
+        baseTotal,
+        discountedTotal,
+        discount: Math.max(0, baseTotal - discountedTotal)
+    };
+}
+
+function updateDiscountMeter() {
+    const select = document.getElementById('billing-pay-count');
+    const fill = document.getElementById('billing-discount-fill');
+    const meterText = document.getElementById('billing-discount-text');
+    if (!select || !fill || !meterText) return;
+
+    const selectedCount = Number.parseInt(select.value || '1', 10);
+    const breakdown = calculatePaymentBreakdown(selectedCount);
+    const progressPct = Math.max(0, Math.min(100, (breakdown.sessionCount / BUNDLE_SIZE) * 100));
+    fill.style.width = `${progressPct}%`;
+
+    if (breakdown.sessionCount < BUNDLE_SIZE) {
+        const remaining = BUNDLE_SIZE - breakdown.sessionCount;
+        meterText.textContent = `Paying now: ${formatPeso(breakdown.discountedTotal)}. Add ${remaining} more to unlock ₱500 bundle discount.`;
+        return;
+    }
+
+    meterText.textContent = `Bundle unlocked: ${formatPeso(breakdown.discountedTotal)} total. You save ${formatPeso(breakdown.discount)}.`;
+}
+
+function setBillingPasswordError(message = '') {
+    const error = document.getElementById('billing-password-error');
+    if (!error) return;
+    if (message) {
+        error.textContent = message;
+        error.classList.remove('hidden');
+    } else {
+        error.classList.add('hidden');
+    }
+}
+
+function setBillingAddError(message = '') {
+    const error = document.getElementById('billing-add-error');
+    if (!error) return;
+    if (message) {
+        error.textContent = message;
+        error.classList.remove('hidden');
+    } else {
+        error.classList.add('hidden');
+        error.textContent = '';
+    }
+}
+
+function selectBillingRole(role) {
+    selectedBillingRole = role === 'tutor' ? 'tutor' : 'client';
+    const clientBtn = document.getElementById('billing-role-client');
+    const tutorBtn = document.getElementById('billing-role-tutor');
+    if (clientBtn) clientBtn.classList.toggle('active', selectedBillingRole === 'client');
+    if (tutorBtn) tutorBtn.classList.toggle('active', selectedBillingRole === 'tutor');
+}
+
+function getBillingTimestamp(item) {
+    const datePart = item.date || '1970-01-01';
+    const timePart = item.time || '00:00';
+    const parsed = Date.parse(`${datePart}T${timePart}:00`);
+    return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function renderBillingList(targetId, sessions, emptyText, sortOrder = 'desc') {
+    const list = document.getElementById(targetId);
+    if (!list) return;
+    list.innerHTML = '';
+    list.scrollTop = 0;
+
+    if (!sessions.length) {
+        const empty = document.createElement('div');
+        empty.className = 'billing-empty';
+        empty.textContent = emptyText;
+        list.appendChild(empty);
+        return;
+    }
+
+    const direction = sortOrder === 'asc' ? 1 : -1;
+    const sorted = [...sessions].sort((a, b) => {
+        const diff = getBillingTimestamp(a) - getBillingTimestamp(b);
+        if (diff !== 0) return direction * diff;
+        return direction * ((a.order || 0) - (b.order || 0));
+    });
+    sorted.forEach(item => {
+        const amount = item.sessions * SINGLE_SESSION_PRICE;
+        const entry = document.createElement('div');
+        entry.className = `billing-item ${item.status}`;
+        entry.innerHTML = `
+            <div class="billing-item-top">
+                <span class="billing-item-date">${item.date} ${item.time}</span>
+                <span class="billing-status ${item.status}">${item.status.toUpperCase()}</span>
             </div>
-
-            <!-- Filler Section with Gray Background for Contrast -->
-            <div style="background: var(--bg-secondary); padding: 4rem 0;">
-                <div class="container">
-
-                    <!-- "Why This Reviewer" Filler Section -->
-                    <section class="section-title">
-                        <h2>Why This Learning Portal?</h2>
-                        <p style="color: var(--text-secondary); max-width: 600px; margin: 0 auto;">Designed to replicate
-                            the
-                            rigor and pressure of the actual examination.</p>
-                    </section>
-
-                    <div class="card-grid">
-                        <div class="card" style="padding: 2rem;">
-                            <div class="card-icon">🧠</div>
-                            <h3>Concept Mastery</h3>
-                            <p>Go beyond rote memorization with deep dives into the 'why' and 'how' of algebra.</p>
-                        </div>
-                        <div class="card" style="padding: 2rem;">
-                            <div class="card-icon">⚡</div>
-                            <h3>Instant Feedback</h3>
-                            <p>Get detailed explanations immediately after every question to close knowledge gaps fast.
-                            </p>
-                        </div>
-                        <div class="card" style="padding: 2rem;">
-                            <div class="card-icon">📈</div>
-                            <h3>Rigorous Standard</h3>
-                            <p>Aligned with the high expectations of the Philippine Science High School system.</p>
-                        </div>
-                    </div>
-
-                    <!-- Subject Hub -->
-                    <section id="subject-list" style="padding-top: 2rem;">
-                        <div class="section-title">
-                            <h2>Review Modules</h2>
-                        </div>
-
-                        <div class="card-grid">
-                            <div class="card" onclick="selectSubject('polynomials')">
-                                <div class="card-icon">✖️</div>
-                                <h3>Polynomial Functions</h3>
-                                <p>Identify, evaluate, finding degree, operations, and basic factoring.</p>
-                                <span class="badge">3 Modules Available</span>
-                            </div>
-
-                            <div class="card" onclick="selectSubject('linear_functions')">
-                                <div class="card-icon">📉</div>
-                                <h3>Linear Functions</h3>
-                                <p>Domain, Range, Function Notation, and Real-world Applications.</p>
-                                <span class="badge">Coming Soon</span>
-                            </div>
-
-                            <div class="card" onclick="selectSubject('line_equation')">
-                                <div class="card-icon">✍️</div>
-                                <h3>Equation of a Line and Graphing</h3>
-                                <p>Slope-intercept form, point-slope form, and graphing techniques.</p>
-                                <span class="badge">Coming Soon</span>
-                            </div>
-
-                            <div class="card" onclick="selectSubject('geometry')">
-                                <div class="card-icon">📐</div>
-                                <h3>Parallel & Perpendicular Lines</h3>
-                                <p>Slopes, Intercepts, Linear Equations, and Cartesian Plane Geometry.</p>
-                                <span class="badge">9 Modules Available</span>
-                            </div>
-
-                            <div class="card" onclick="selectSubject('circles')">
-                                <div class="card-icon">⭕</div>
-                                <h3>Circles</h3>
-                                <p>Chords, tangents, secants, arcs, and central/inscribed angles.</p>
-                                <span class="badge">4 Modules Available</span>
-                            </div>
-                        </div>
-                    </section>
-
-                </div>
-        </section>
-
-        <!-- TEST SELECTION HUB -->
-        <section id="test-selection" class="view-section hidden container">
-            <div style="margin-top: 2rem;">
-                <button class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.9rem;"
-                    onclick="navTo('landing')">← Back to Modules</button>
+            <div class="billing-item-bottom">
+                <span>${item.tutee} • ${formatSessionCount(item.sessions)}</span>
+                <strong>${formatPeso(amount)}</strong>
             </div>
+        `;
+        list.appendChild(entry);
+    });
+}
 
-            <div class="section-title" style="margin-top: 1rem;">
-                <h1 id="subject-title">Subject Title</h1>
-                <p style="color: var(--text-secondary);">Select a difficulty module to begin your assessment.</p>
-            </div>
+function renderBillingDashboard() {
+    const unpaidSessions = billingSessions.filter(item => item.status === 'unpaid');
+    const unpaidTotal = unpaidSessions.reduce((sum, item) => sum + (item.sessions * SINGLE_SESSION_PRICE), 0);
+    const adminControls = document.getElementById('billing-admin-controls');
+    const clientNote = document.getElementById('billing-client-note');
+    const isTutor = isTutorAccess();
 
-            <div id="test-grid" class="card-grid">
-                <!-- Populated by JS -->
-            </div>
-        </section>
+    if (adminControls) adminControls.classList.toggle('hidden', !isTutor);
+    if (clientNote) clientNote.classList.toggle('hidden', isTutor);
 
-        <!-- QUIZ INTERFACE -->
-        <section id="quiz" class="view-section hidden container">
-            <div class="quiz-container">
-                <div class="question-header">
-                    <span id="quiz-subject-label">Subject</span>
-                    <span id="question-tracker">Question 1 / 20</span>
-                </div>
+    const totalUnpaidEl = document.getElementById('billing-total-unpaid');
+    const unpaidCountEl = document.getElementById('billing-unpaid-count');
+    const totalLogsEl = document.getElementById('billing-total-logs');
 
-                <div id="reading-passage" class="reading-passage hidden"></div>
-                <div class="question-box">
-                    <div id="question-text" class="question-text">Loading...</div>
-                    <div id="options-container"></div>
-                    <div class="quiz-footer"
-                        style="margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1rem; text-align: right;">
-                        <button id="skip-btn" class="btn btn-secondary" style="font-size: 0.9rem;"
-                            onclick="handleSkipClick()">Skip Question →</button>
-                    </div>
-                </div>
-            </div>
-        </section>
+    if (totalUnpaidEl) totalUnpaidEl.textContent = formatPeso(unpaidTotal);
+    if (unpaidCountEl) unpaidCountEl.textContent = String(unpaidSessions.length);
+    if (totalLogsEl) totalLogsEl.textContent = String(billingSessions.length);
 
-        <!-- RESULTS DASHBOARD -->
-        <section id="results" class="view-section hidden container">
-            <div class="quiz-container">
-                <div class="results-card">
-                    <h2 style="color: var(--text-secondary); text-transform: uppercase;">Examination Complete</h2>
-                    <div id="score-display" class="score-display">0/0</div>
-                    <h3 id="rating-text" style="font-size: 1.5rem; color: var(--text-primary); margin-bottom: 2rem;">
-                        Analyzing...</h3>
-                    <button class="btn btn-primary" onclick="navTo('landing')">Return to Dashboard</button>
-                </div>
-            </div>
-        </section>
+    renderBillingList('billing-unpaid-list', unpaidSessions, 'No unpaid sessions right now.', 'asc');
+    renderBillingList('billing-log-list', billingSessions, 'No session logs found.', 'desc');
+    updateDiscountMeter();
+}
 
-        <!-- BILLING DASHBOARD -->
-        <section id="billing" class="view-section hidden container">
-            <div style="margin-top: 2rem;">
-                <button class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.9rem;"
-                    onclick="navTo('landing')">← Back to Home</button>
-            </div>
+async function applyBulkPayment() {
+    if (!isTutorAccess()) {
+        setBillingPaymentStatus('Client access is read-only. Tutor access is required for payment updates.', true);
+        return;
+    }
+    const select = document.getElementById('billing-pay-count');
+    const requested = Number.parseInt(select && select.value ? select.value : '1', 10);
+    if (!Number.isFinite(requested) || requested < 1 || requested > 10) {
+        setBillingPaymentStatus('Select a valid payment count from 1 to 10.', true);
+        return;
+    }
 
-            <div class="section-title" style="margin-top: 1rem;">
-                <h1>Billing Dashboard</h1>
-                <p style="color: var(--text-secondary);">Track unpaid amounts and full payment logs.</p>
-            </div>
+    const unpaidSorted = billingSessions
+        .filter(item => item.status === 'unpaid')
+        .sort((a, b) => {
+            const diff = getBillingTimestamp(a) - getBillingTimestamp(b);
+            if (diff !== 0) return diff;
+            return (a.order || 0) - (b.order || 0);
+        });
 
-            <div class="billing-summary-grid">
-                <div class="billing-summary-card">
-                    <div class="summary-label">Total Unpaid Amount</div>
-                    <div id="billing-total-unpaid" class="summary-value">₱0</div>
-                </div>
-                <div class="billing-summary-card">
-                    <div class="summary-label">Unpaid Sessions</div>
-                    <div id="billing-unpaid-count" class="summary-value">0</div>
-                </div>
-                <div class="billing-summary-card">
-                    <div class="summary-label">All Logged Sessions</div>
-                    <div id="billing-total-logs" class="summary-value">0</div>
-                </div>
-            </div>
+    if (!unpaidSorted.length) {
+        setBillingPaymentStatus('No unpaid sessions to mark as paid.', true);
+        return;
+    }
 
-            <div id="billing-admin-controls" class="billing-payment-controls">
-                <div class="billing-payment-row">
-                    <label for="billing-pay-count">Mark earliest unpaid session logs as paid:</label>
-                    <select id="billing-pay-count" class="billing-pay-select"></select>
-                    <button class="btn btn-primary billing-pay-btn" onclick="applyBulkPayment()">Apply Payment</button>
-                    <button class="btn btn-secondary" onclick="openBillingAddSessionModal()">+ Add Session</button>
-                </div>
-                <div class="billing-pricing-note">Pricing: 1 session = ₱500 | 10-session bundle = ₱4,500 (save ₱500)</div>
-                <div class="billing-discount-meter">
-                    <div class="billing-discount-track">
-                        <div id="billing-discount-fill" class="billing-discount-fill"></div>
-                    </div>
-                    <div id="billing-discount-text" class="billing-discount-text"></div>
-                </div>
-                <div id="billing-payment-status" class="billing-payment-status hidden"></div>
-            </div>
-            <div id="billing-client-note" class="billing-client-note hidden">Client view: read-only billing records.</div>
+    const payNow = unpaidSorted.slice(0, requested);
+    const idsToUpdate = payNow.map(item => item.id).filter(id => Number.isFinite(Number(id)));
+    if (hasSupabaseBilling()) {
+        if (idsToUpdate.length !== payNow.length) {
+            setBillingPaymentStatus('Sync issue: some billing rows are missing Supabase IDs. Refresh and try again.', true);
+            return;
+        }
+        const { error } = await supabaseClient
+            .from(BILLING_TABLE)
+            .update({ status: 'paid' })
+            .in('id', idsToUpdate);
+        if (error) {
+            setBillingPaymentStatus(`Supabase update failed: ${error.message}`, true);
+            return;
+        }
+    }
 
-            <div class="card-grid billing-grid">
-                <div class="card billing-card static-card">
-                    <h3>Payment Needed</h3>
-                    <p style="margin-bottom: 1rem;">Current unpaid sessions.</p>
-                    <div id="billing-unpaid-list" class="billing-list"></div>
-                </div>
+    payNow.forEach(item => {
+        item.status = 'paid';
+    });
+    saveBillingSessions();
+    renderBillingDashboard();
 
-                <div class="card billing-card static-card">
-                    <h3>Session Logs</h3>
-                    <p style="margin-bottom: 1rem;">Complete payment history (paid + unpaid).</p>
-                    <div id="billing-log-list" class="billing-list"></div>
-                </div>
-            </div>
+    const paidCount = payNow.reduce((sum, item) => sum + item.sessions, 0);
+    const breakdown = calculatePaymentBreakdown(paidCount);
+    const remaining = billingSessions.filter(item => item.status === 'unpaid').length;
+    const discountText = breakdown.discount > 0 ? ` Saved ${formatPeso(breakdown.discount)}.` : '';
+    const modeText = billingPersistenceMode === 'supabase' ? 'Synced to Supabase.' : 'Saved locally.';
+    setBillingPaymentStatus(`Marked ${formatSessionCount(paidCount)} as PAID (FIFO). Charged ${formatPeso(breakdown.discountedTotal)}.${discountText} ${remaining} unpaid remaining. ${modeText}`);
+    updateDiscountMeter();
+}
 
-            <div class="card static-card billing-methods-card">
-                <h3>Payment Methods</h3>
-                <div class="payment-methods-grid">
-                    <div class="payment-method">
-                        <strong>GoTyme Bank</strong>
-                        <p>0148 5367 2011</p>
-                        <p>Israel John Penalosa</p>
-                    </div>
-                    <div class="payment-method">
-                        <strong>GCash</strong>
-                        <p>0966 253 5576</p>
-                        <p>Rachel Penalosa</p>
-                    </div>
-                </div>
-            </div>
-        </section>
+function showBillingPasswordModal() {
+    const modal = document.getElementById('billing-password-modal');
+    const input = document.getElementById('billing-password-input');
+    if (!modal) return;
 
-        <!-- SKIP WARNING MODAL -->
-        <div id="skip-modal" class="modal-overlay hidden" style="z-index: 200;">
-            <div class="modal-content" style="max-width: 400px; height: auto; text-align: center; padding: 2rem;">
-                <h3 style="margin-bottom: 1rem; color: var(--warning);">⚠️ Skip Question?</h3>
-                <p style="margin-bottom: 1.5rem; color: var(--text-secondary);">
-                    Skipping awards <strong>0 points</strong> and you will <strong>NOT</strong> see the correct answer.
-                </p>
-                <div style="display: flex; gap: 1rem; justify-content: center;">
-                    <button class="btn btn-secondary" onclick="closeSkipModal()">Cancel</button>
-                    <button class="btn btn-primary"
-                        style="background-color: var(--warning); border-color: var(--warning);"
-                        onclick="confirmSkip()">Skip Anyway</button>
-                </div>
-            </div>
-        </div>
+    selectedBillingRole = 'client';
+    selectBillingRole(selectedBillingRole);
+    setBillingPasswordError('');
+    modal.classList.remove('hidden');
+    setTimeout(() => modal.classList.add('active'), 10);
+    if (input) input.focus();
+}
 
-        <!-- BILLING PASSWORD MODAL -->
-        <div id="billing-password-modal" class="modal-overlay hidden" style="z-index: 250;">
-            <div class="modal-content billing-password-content">
-                <h3 style="margin-bottom: 0.75rem;">Billing Access</h3>
-                <p style="color: var(--text-secondary); margin-bottom: 1rem;">Choose access level and enter password.
-                </p>
-                <div id="billing-role-switcher" class="billing-role-switcher">
-                    <button id="billing-role-client" type="button" class="billing-role-btn active"
-                        onclick="selectBillingRole('client')">Client</button>
-                    <button id="billing-role-tutor" type="button" class="billing-role-btn"
-                        onclick="selectBillingRole('tutor')">Tutor</button>
-                </div>
-                <input id="billing-password-input" type="password" class="billing-password-input"
-                    placeholder="Enter password" onkeydown="handleBillingPasswordKeydown(event)">
-                <div id="billing-password-error" class="billing-password-error hidden">Incorrect password. Try again.
-                </div>
-                <div class="billing-password-actions">
-                    <button class="btn btn-secondary billing-action-btn" onclick="closeBillingPasswordModal()">Cancel</button>
-                    <button class="btn btn-primary billing-action-btn" onclick="submitBillingPassword()">Unlock</button>
-                </div>
-            </div>
-        </div>
+function closeBillingPasswordModal() {
+    const modal = document.getElementById('billing-password-modal');
+    const input = document.getElementById('billing-password-input');
+    if (!modal) return;
 
-        <div id="billing-add-modal" class="modal-overlay hidden" style="z-index: 260;">
-            <div class="modal-content billing-password-content">
-                <h3 style="margin-bottom: 0.75rem;">Add Session</h3>
-                <p style="color: var(--text-secondary); margin-bottom: 1rem;">Tutor-only: create a new billing session log.</p>
-                <div class="billing-add-grid">
-                    <label class="billing-field-label" for="billing-add-date">Date</label>
-                    <input id="billing-add-date" type="date" class="billing-password-input">
-                    <label class="billing-field-label" for="billing-add-time">Time</label>
-                    <input id="billing-add-time" type="time" class="billing-password-input">
-                    <label class="billing-field-label" for="billing-add-tutee">Tutee</label>
-                    <input id="billing-add-tutee" type="text" class="billing-password-input" placeholder="JC">
-                    <label class="billing-field-label" for="billing-add-status">Status</label>
-                    <select id="billing-add-status" class="billing-password-input">
-                        <option value="unpaid" selected>Unpaid</option>
-                        <option value="paid">Paid</option>
-                    </select>
-                </div>
-                <div id="billing-add-error" class="billing-password-error hidden"></div>
-                <div class="billing-password-actions">
-                    <button class="btn btn-secondary billing-action-btn" onclick="closeBillingAddSessionModal()">Cancel</button>
-                    <button class="btn btn-primary billing-action-btn" onclick="submitBillingAddSession()">Save Session</button>
-                </div>
-            </div>
-        </div>
+    modal.classList.remove('active');
+    setTimeout(() => modal.classList.add('hidden'), 300);
+    if (input) input.value = '';
+    setBillingPasswordError('');
+}
 
-    </main>
+function submitBillingPassword() {
+    const input = document.getElementById('billing-password-input');
+    if (!input) return;
 
-    <!-- FEEDBACK OVERLAY -->
-    <div id="feedback-overlay" class="feedback-overlay">
-        <div class="feedback-content">
-            <div style="display:flex; justify-content:space-between; margin-bottom:1rem;">
-                <div id="feedback-status" style="font-weight:700; font-size:1.2rem;">Correct</div>
-                <button class="btn-next" onclick="nextQuestion()">Next Arrow &rarr;</button>
-            </div>
-            <div id="feedback-correct-answer"
-                style="display:none; font-weight:600; margin-bottom:0.5rem; color:var(--text-primary);"></div>
-            <div id="feedback-explanation"
-                style="background:var(--bg-secondary); padding:1rem; border-radius:8px; color:var(--text-secondary);">
-            </div>
-        </div>
-    </div>
+    const expectedPassword = selectedBillingRole === 'tutor' ? BILLING_TUTOR_PASSWORD : BILLING_CLIENT_PASSWORD;
+    if (input.value === expectedPassword) {
+        setBillingRole(selectedBillingRole);
+        closeBillingPasswordModal();
+        openBillingDashboard();
+    } else {
+        setBillingPasswordError('Incorrect password. Try again.');
+        input.focus();
+    }
+}
 
-    <!-- QUICK REFERENCE MODAL -->
-    <div id="quick-ref-modal" class="modal-overlay">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 style="margin:0; font-size:1.5rem; color:var(--primary);">Quick Reference</h2>
-                <button class="modal-close" onclick="closeQuickRef()"
-                    style="font-size:2rem; line-height:0.5; position:static;">×</button>
-            </div>
+function handleBillingPasswordKeydown(event) {
+    if (event.key === 'Enter') {
+        submitBillingPassword();
+    }
+}
 
-            <!-- TABS -->
-            <div class="ref-layout">
-                <!-- SIDEBAR -->
-                <div class="ref-sidebar">
-                    <div class="ref-nav-header">TOPICS</div>
-                    <button class="ref-nav-item active" onclick="switchQuickRefTab('ref-polynomials')">
-                        <span class="icon">📝</span> Polynomials
-                    </button>
-                    <button class="ref-nav-item" onclick="switchQuickRefTab('ref-linear')">
-                        <span class="icon">📈</span> Linear Functions
-                    </button>
-                    <button class="ref-nav-item" onclick="switchQuickRefTab('ref-equation')">
-                        <span class="icon">✍️</span> Eq. of Line & Graph
-                    </button>
-                    <button class="ref-nav-item" onclick="switchQuickRefTab('ref-geometry')">
-                        <span class="icon">📐</span> Parallel & Perp.
-                    </button>
-                </div>
+async function openBillingDashboard() {
+    await loadBillingSessions();
+    renderBillingDashboard();
+    navTo('billing');
+}
 
-                <!-- MAIN CONTENT -->
-                <div class="ref-main">
+function openBilling() {
+    showBillingPasswordModal();
+}
 
-                    <!-- POLYNOMIALS -->
-                    <div id="ref-polynomials" class="ref-section active">
-                        <h3 class="ref-title">Polynomial Functions</h3>
+function openBillingAddSessionModal() {
+    if (!isTutorAccess()) {
+        setBillingPaymentStatus('Client access is read-only. Tutor access is required to add sessions.', true);
+        return;
+    }
+    const modal = document.getElementById('billing-add-modal');
+    const dateInput = document.getElementById('billing-add-date');
+    const timeInput = document.getElementById('billing-add-time');
+    const tuteeInput = document.getElementById('billing-add-tutee');
+    const statusInput = document.getElementById('billing-add-status');
+    const now = new Date();
 
-                        <div class="ref-block">
-                            <h4>Laws of Exponents</h4>
-                            <div class="math-row">
-                                <span class="label">Product Rule:</span> <span class="value math-font">$x^a \cdot x^b =
-                                    x^{a+b}$</span>
-                            </div>
-                            <div class="math-row">
-                                <span class="label">Power Rule:</span> <span class="value math-font">$(x^a)^b =
-                                    x^{ab}$</span>
-                            </div>
-                            <div class="math-row">
-                                <span class="label">Quotient Rule:</span> <span class="value math-font">$\frac{x^a}{x^b}
-                                    = x^{a-b}$</span>
-                            </div>
-                            <div class="math-row">
-                                <span class="label">Zero Exponent:</span> <span class="value math-font">$x^0 = 1$</span>
-                            </div>
-                        </div>
+    if (dateInput && !dateInput.value) dateInput.value = now.toISOString().slice(0, 10);
+    if (timeInput && !timeInput.value) timeInput.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    if (tuteeInput && !tuteeInput.value.trim()) tuteeInput.value = 'JC';
+    if (statusInput) statusInput.value = 'unpaid';
 
-                        <div class="ref-block">
-                            <h4>Special Products</h4>
-                            <div class="math-box">
-                                $$(a+b)^2 = a^2 + 2ab + b^2$$
-                            </div>
-                            <div class="math-box">
-                                $$(a-b)(a+b) = a^2 - b^2$$
-                            </div>
-                            <div class="math-box">
-                                $$(a+b)^3 = a^3 + 3a^2b + 3ab^2 + b^3$$
-                            </div>
-                        </div>
+    setBillingAddError('');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    setTimeout(() => modal.classList.add('active'), 10);
+}
 
-                        <div class="ref-block">
-                            <h4>Factoring Techniques</h4>
-                            <p><strong>1. Common Monomial Factor (CMF):</strong> Factor out GCF first.<br>
-                                $4x^2 + 8x \rightarrow 4x(x+2)$</p>
-                            <p><strong>2. Difference of Squares:</strong> $x^2 - 16 \rightarrow (x-4)(x+4)$</p>
-                        </div>
-                    </div>
+function closeBillingAddSessionModal() {
+    const modal = document.getElementById('billing-add-modal');
+    if (!modal) return;
+    modal.classList.remove('active');
+    setTimeout(() => modal.classList.add('hidden'), 300);
+    setBillingAddError('');
+}
 
-                    <!-- LINEAR -->
-                    <div id="ref-linear" class="ref-section" style="display:none;">
-                        <h3 class="ref-title">Linear Functions</h3>
+async function submitBillingAddSession() {
+    if (!isTutorAccess()) {
+        setBillingAddError('Tutor access is required.');
+        return;
+    }
 
-                        <div class="ref-block">
-                            <h4>Slope Behavior</h4>
-                            <div class="math-row">
-                                <span class="label">Positive ($m > 0$):</span> <span class="value">Rises to Right
-                                    ↗</span>
-                            </div>
-                            <div class="math-row">
-                                <span class="label">Negative ($m < 0$):</span> <span class="value">Falls to Right
-                                            ↘</span>
-                            </div>
-                            <div class="math-row">
-                                <span class="label">Zero ($m = 0$):</span> <span class="value">Horizontal ➡</span>
-                            </div>
-                            <div class="math-row">
-                                <span class="label">Undefined:</span> <span class="value">Vertical ⬆</span>
-                            </div>
-                        </div>
+    const dateInput = document.getElementById('billing-add-date');
+    const timeInput = document.getElementById('billing-add-time');
+    const tuteeInput = document.getElementById('billing-add-tutee');
+    const statusInput = document.getElementById('billing-add-status');
+    if (!dateInput || !timeInput || !tuteeInput || !statusInput) return;
 
-                        <div class="ref-block">
-                            <h4>Intercepts</h4>
-                            <p class="highlight-text"><strong>$x$-intercept:</strong> Set $y=0$ and solve for $x$.
-                                (Where graph crosses x-axis)</p>
-                            <p class="highlight-text"><strong>$y$-intercept:</strong> Set $x=0$ and solve for $y$.
-                                (Where graph crosses y-axis)</p>
-                        </div>
+    const date = (dateInput.value || '').trim();
+    const time = (timeInput.value || '').trim().slice(0, 5);
+    const tutee = (tuteeInput.value || '').trim();
+    const status = statusInput.value === 'paid' ? 'paid' : 'unpaid';
 
-                        <div class="ref-block">
-                            <h4>Vertical Line Test</h4>
-                            <p>A graph is a function only if any vertical line touches it at most once.</p>
-                        </div>
-                    </div>
+    if (!date || !time || !tutee) {
+        setBillingAddError('Fill date, time, and tutee.');
+        return;
+    }
 
-                    <!-- EQUATION OF LINE -->
-                    <div id="ref-equation" class="ref-section" style="display:none;">
-                        <h3 class="ref-title">Equation of a Line and Graphing</h3>
+    const nextOrder = billingSessions.reduce((maxVal, item) => Math.max(maxVal, Number(item.order) || 0), -1) + 1;
+    let createdRow = {
+        id: null,
+        date,
+        time,
+        tutee,
+        sessions: 1,
+        status,
+        sort_order: nextOrder
+    };
 
-                        <div class="ref-block">
-                            <h4>Forms of Equation</h4>
-                            <div class="math-row">
-                                <span class="label">Slope-Intercept:</span>
-                                <span class="value math-font">$y = mx + b$</span>
-                            </div>
-                            <div class="math-row">
-                                <span class="label">Point-Slope:</span>
-                                <span class="value math-font">$y - y_1 = m(x - x_1)$</span>
-                            </div>
-                            <div class="math-row">
-                                <span class="label">Standard Form:</span>
-                                <span class="value math-font">$Ax + By = C$</span>
-                            </div>
-                            <div class="math-row">
-                                <span class="label">Two-Point:</span>
-                                <span class="value math-font">$y-y_1 = \frac{y_2-y_1}{x_2-x_1}(x-x_1)$</span>
-                            </div>
-                        </div>
+    if (hasSupabaseBilling()) {
+        const { data, error } = await supabaseClient
+            .from(BILLING_TABLE)
+            .insert({
+                date,
+                time,
+                tutee,
+                sessions: 1,
+                status,
+                sort_order: nextOrder
+            })
+            .select('id,date,time,tutee,sessions,status,sort_order')
+            .single();
+        if (error) {
+            setBillingAddError(`Supabase insert failed: ${error.message}`);
+            return;
+        }
+        createdRow = data || createdRow;
+    }
 
-                        <div class="ref-block">
-                            <h4>Slope Formula ($m$)</h4>
-                            <div class="math-box">
-                                $$m = \frac{y_2 - y_1}{x_2 - x_1} = \frac{\text{Rise}}{\text{Run}}$$
-                            </div>
-                        </div>
-                    </div>
+    billingSessions.push(normalizeBillingRow(createdRow, nextOrder));
+    saveBillingSessions();
+    closeBillingAddSessionModal();
+    renderBillingDashboard();
+    const modeText = billingPersistenceMode === 'supabase' ? 'Synced to Supabase.' : 'Saved locally.';
+    setBillingPaymentStatus(`Added session for ${tutee} on ${date} ${time}. ${modeText}`);
+}
 
-                    <!-- GEOMETRY -->
-                    <div id="ref-geometry" class="ref-section" style="display:none;">
-                        <h3 class="ref-title">Parallel & Perpendicular Lines</h3>
+function renderMath() {
+    if (window.renderMathInElement) {
+        renderMathInElement(document.body, {
+            delimiters: [
+                { left: "$$", right: "$$", display: true },
+                { left: "$", right: "$", display: false },
+                { left: "\\[", right: "\\]", display: true }
+            ]
+        });
+    }
+}
 
-                        <div class="ref-block">
-                            <h4>Lines Relationship</h4>
-                            <div class="math-row">
-                                <span class="label">Parallel:</span>
-                                <span class="value math-font">$m_1 = m_2$</span>
-                            </div>
-                            <div class="math-row">
-                                <span class="label">Perpendicular:</span>
-                                <span class="value math-font">$m_1 \cdot m_2 = -1$</span>
-                            </div>
-                        </div>
+// === IMPROVED QUICK REFERENCE ===
+function openQuickRef() {
+    const modal = document.getElementById('quick-ref-modal');
+    modal.classList.add('active');
+    // Ensure MathJax renders if not already
+    renderMath();
+}
+
+function closeQuickRef() {
+    const modal = document.getElementById('quick-ref-modal');
+    modal.classList.remove('active');
+}
+
+// === CORE NAVIGATION ===
+function scrollToSection(id) {
+    if (document.getElementById('landing').classList.contains('hidden')) {
+        navTo('landing');
+        setTimeout(() => {
+            const el = document.getElementById(id);
+            if (el) el.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+    } else {
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }
+}
+
+function navTo(screenId) {
+    // Hide all main sections
+    document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+
+    // Show target
+    const target = document.getElementById(screenId);
+    if (target) target.classList.remove('hidden');
+
+    // Close overlays
+    document.getElementById('feedback-overlay').classList.remove('active');
+
+    // Scroll handling
+    if (screenId === 'landing') {
+        window.scrollTo(0, 0);
+    }
+}
+
+// Subject Selection
+function selectSubject(subject) {
+    currentSubject = subject;
+    const testGrid = document.getElementById('test-grid');
+    testGrid.innerHTML = '';
+
+    if (subject === 'linear_functions' || subject === 'line_equation') {
+        const titles = {
+            'linear_functions': 'Linear Functions',
+            'line_equation': 'Equation of a Line & Graphing'
+        };
+        document.getElementById('subject-title').textContent = titles[subject];
+
+        const emptyState = document.createElement('div');
+        emptyState.style.gridColumn = "1 / -1";
+        emptyState.style.textAlign = "center";
+        emptyState.style.padding = "4rem 2rem";
+        emptyState.innerHTML = `
+            <div style="font-size: 3rem; margin-bottom: 1rem;">🚧</div>
+            <h3>Module Under Construction</h3>
+            <p style="color: var(--text-secondary);">Content for Linear Functions is being prepared. Check back soon!</p>
+            <button class="btn btn-secondary" style="margin-top: 1rem;" onclick="navTo('landing')">Return Home</button>
+        `;
+        testGrid.appendChild(emptyState);
+        navTo('test-selection');
+        return;
+    }
+
+    // Dynamic Title Logic
+    const titles = {
+        'geometry': 'Parallel & Perpendicular Lines',
+        'polynomials': 'Polynomial Functions',
+        'circles': 'Circles'
+    };
+    document.getElementById('subject-title').textContent = titles[subject] || 'Module Selection';
+
+    // Group modules by difficulty
+    const rawModules = window.questions[subject] || {};
+    const modulesByDiff = {
+        'Foundation': [],
+        'Intermediate': [],
+        'Elite': []
+    };
+
+    // Sort valid modules into categories
+    Object.keys(rawModules).forEach(key => {
+        const mod = rawModules[key];
+        const diff = mod.difficulty || 'Foundation'; // Default fallback
+        if (!modulesByDiff[diff]) modulesByDiff[diff] = [];
+
+        modulesByDiff[diff].push({
+            id: key,
+            ...mod
+        });
+    });
+
+    // Render Categories
+    const diffOrder = ['Foundation', 'Intermediate', 'Elite'];
+
+    diffOrder.forEach(diff => {
+        const mods = modulesByDiff[diff];
+        if (!mods || mods.length === 0) return;
+
+        // Category Header
+        const catHeader = document.createElement('div');
+        catHeader.style.gridColumn = "1 / -1";
+        catHeader.style.marginTop = "2rem";
+        catHeader.style.marginBottom = "1rem";
+
+        let desc = "Build your core understanding.";
+        if (diff === 'Intermediate') desc = "Apply concepts to standard problems.";
+        if (diff === 'Elite') desc = "Complex synthesis and proofs.";
+
+        catHeader.innerHTML = `
+            <h3 style="font-size: 1.4rem; color: var(--text-primary); margin-bottom: 0.25rem;">${diff} Level</h3>
+            <p style="color: var(--text-secondary); font-size: 0.95rem;">${desc}</p>
+            <hr style="border: 0; border-top: 1px solid var(--border); margin-top: 0.5rem;">
+        `;
+        testGrid.appendChild(catHeader);
+
+        // Modules
+        mods.forEach(mod => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.style.padding = '1.5rem';
+            const subjectIcons = {
+                polynomials: '✖️',
+                geometry: '📐',
+                circles: '⭕'
+            };
+            const icon = subjectIcons[subject] || '📘';
+            card.innerHTML = `
+                <div class="card-icon" style="margin-bottom:1rem; font-size:2.5rem;">${icon}</div>
+                <h3 style="font-size:1.1rem;">${mod.title}</h3>
+                <p style="margin-bottom: 0.5rem; font-weight:600;">${mod.subtitle}</p>
+                <p style="margin-bottom: 1rem; font-size: 0.9rem;">${mod.description}</p>
+                <span class="badge" style="margin-top:auto;">Start</span>
+            `;
+            card.onclick = () => startTest(mod.id);
+            testGrid.appendChild(card);
+        });
+    });
+
+    navTo('test-selection');
+}
+
+// Quiz Functions
+function startTest(testKey) {
+    currentTest = testKey;
+    currentQuestionIndex = 0;
+    score = 0;
+    const subjectLabels = {
+        geometry: 'Geometry / Lines',
+        polynomials: 'Polynomials',
+        circles: 'Geometry / Circles'
+    };
+    document.getElementById('quiz-subject-label').textContent = subjectLabels[currentSubject] || 'Subject';
+    navTo('quiz');
+    loadQuestion();
+}
+
+function loadQuestion() {
+    try {
+        document.getElementById('feedback-overlay').classList.remove('active');
+
+        // Ensure data exists or throw error
+        if (!window.questions || !window.questions[currentSubject]) {
+            throw new Error(`Data missing. Please reload. (Subject: ${currentSubject})`);
+        }
+
+        // Access the .questions array now
+        const moduleData = window.questions[currentSubject][currentTest];
+        const qData = moduleData.questions[currentQuestionIndex];
+        const totalQ = moduleData.questions.length;
+
+        document.getElementById('question-tracker').textContent = `Question ${currentQuestionIndex + 1} / ${totalQ}`;
 
 
+        const passageEl = document.getElementById('reading-passage');
+        const quizContainer = document.querySelector('.quiz-container');
 
-                        <div class="ref-block">
-                            <h4>Distance Formula</h4>
-                            <div class="math-box">
-                                $$d = \sqrt{(x_2-x_1)^2 + (y_2-y_1)^2}$$
-                            </div>
-                        </div>
-                    </div>
+        // Reset Layout
+        passageEl.classList.add('hidden');
+        quizContainer.classList.remove('split-mode');
+        document.getElementById('question-text').textContent = '';
+        const optionsContainer = document.getElementById('options-container');
+        optionsContainer.innerHTML = '';
 
-                </div>
-            </div>
+        // LINKED PASSAGE MODE
+        if (qData.passageText) {
+            passageEl.textContent = qData.passageText;
+            passageEl.classList.remove('hidden');
+            quizContainer.classList.add('split-mode'); // Trigger CSS Grid Side-by-Side
+        }
 
+        // RENDER BASED ON TYPE
 
-        </div>
-    </div>
+        // 0. FIGURE QUESTION
+        if (qData.image) {
+            const img = document.createElement('img');
+            img.src = qData.image;
+            img.className = 'question-figure';
+            img.alt = "Question Diagram";
 
-    <script src="questions.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-config.js"></script>
-    <script src="script.js"></script>
-</body>
+            const figureBox = document.createElement('div');
+            figureBox.style.textAlign = 'center';
+            figureBox.appendChild(img);
+            // Insert before options container
+            const qTextBox = document.getElementById('question-text');
+            qTextBox.parentNode.insertBefore(figureBox, optionsContainer);
+        }
 
-</html>
+        // 1. ERROR RECOGNITION
+        if (qData.type === 'error_recognition') {
+            // Render Question Text with Markdown Support (Bold)
+            const rawText = qData.question || "";
+            const formattedText = rawText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\\n/g, '<br>').replace(/\n/g, '<br>');
+            document.getElementById('question-text').innerHTML = formattedText;
+            const sentenceBox = document.createElement('div');
+            sentenceBox.className = 'error-sentence-box';
+
+            // Clean the text of [A], [B] markers first
+            let cleanText = qData.text.replace(/\[[A-D]\]\s*/g, '').replace(/\*/g, '');
+            let htmlText = cleanText;
+
+            // Sort segments by length to avoid replacing sub-segments accidentally (e.g., "is" vs "island")
+            // though unlikely given the context, safest to do.
+            // Actually, we must use the segments in order or carefully replace.
+
+            qData.segments.forEach((seg, idx) => {
+                // We create the replacement HTML. 
+                // We must be careful not to replace inside already replaced tags.
+                // A safe way is to split the string? Or just replace global?
+                // Given the specific nature of these questions, simple replacement is usually safe enough if text is unique.
+                const replacement = `
+                    <span class="sentence-segment" onclick="handleAnswer(${idx}, this)" data-idx="${idx}">
+                        <span class="segment-text">${seg.text}</span>
+                        <span class="segment-label">${seg.label}</span>
+                    </span>
+                `;
+                htmlText = htmlText.replace(seg.text, replacement);
+            });
+
+            sentenceBox.innerHTML = htmlText;
+            optionsContainer.appendChild(sentenceBox);
+
+            // Add Option E (No Error)
+            const noErrorBtn = document.createElement('button');
+            noErrorBtn.className = 'option-btn';
+            noErrorBtn.style.marginTop = '1.5rem';
+            noErrorBtn.onclick = () => handleAnswer(4, noErrorBtn);
+            noErrorBtn.innerHTML = `<div class="option-marker">E</div><span>NO ERROR</span>`;
+            optionsContainer.appendChild(noErrorBtn);
+        }
+        // 2. SENTENCE ORDERING
+        else if (qData.type === 'sentence_ordering') {
+            // Render Question Text with Markdown Support (Bold)
+            const rawText = qData.question || "";
+            const formattedText = rawText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\\n/g, '<br>').replace(/\n/g, '<br>');
+            document.getElementById('question-text').innerHTML = formattedText;
+
+            const orderBox = document.createElement('div');
+            orderBox.className = 'ordering-box';
+            orderBox.innerHTML = qData.options.map(s => `<div class="order-item">${s}</div>`).join('');
+            optionsContainer.appendChild(orderBox);
+
+            const choices = qData.orderingChoices || ['Option A', 'Option B', 'Option C', 'Option D'];
+            choices.forEach((choiceText, idx) => {
+                const btn = document.createElement('button');
+                btn.className = 'option-btn';
+                btn.onclick = () => handleAnswer(idx, btn);
+                const label = String.fromCharCode(65 + idx);
+                btn.innerHTML = `<div class="option-marker">${label}</div><span>${choiceText}</span>`;
+                optionsContainer.appendChild(btn);
+            });
+
+        }
+        // 3. STANDARD
+        else {
+            // Render Question Text with Markdown Support (Bold)
+            const rawText = qData.question || "";
+            const formattedText = rawText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\\n/g, '<br>').replace(/\n/g, '<br>');
+            document.getElementById('question-text').innerHTML = formattedText;
+            qData.options.forEach((opt, idx) => {
+                const btn = document.createElement('button');
+                btn.className = 'option-btn';
+                btn.onclick = () => handleAnswer(idx, btn);
+                const letter = String.fromCharCode(65 + idx); // A, B, C, D, E...
+                btn.innerHTML = `<div class="option-marker">${letter}</div><span>${opt}</span>`;
+                optionsContainer.appendChild(btn);
+            });
+        }
+
+        renderMath();
+    } catch (e) {
+        console.error("Load Error:", e);
+        document.getElementById('question-text').textContent = "⚠️ Error loading question: " + e.message;
+        document.getElementById('options-container').innerHTML = `<div style="padding:1rem; color:var(--text-secondary)">Please tell the developer: ${e.message}</div>`;
+    }
+}
+
+function formatErrorSentence(text) {
+    return text.replace(/\[([A-D])\]/g, '<span class="error-badge">$1</span>');
+}
+
+function handleAnswer(selectedIndex, btnElement) {
+    // Select both buttons and segments
+    const interactiveElements = document.querySelectorAll('.option-btn, .sentence-segment');
+    interactiveElements.forEach(el => {
+        el.disabled = true; // Works for buttons
+        el.style.pointerEvents = 'none'; // Works for spans/divs
+    });
+
+    const qData = window.questions[currentSubject][currentTest].questions[currentQuestionIndex];
+    const isCorrect = selectedIndex === qData.correctAnswer;
+
+    if (isCorrect) {
+        btnElement.classList.add('correct');
+        score++;
+    } else {
+        btnElement.classList.add('incorrect');
+
+        // Highlight the correct answer
+        // We need to find the element that corresponds to the correct index
+        // Since we might have buttons OR segments, we check data-idx or implicit order?
+        // Safest is to check both collections.
+
+        if (qData.type === 'error_recognition') {
+            const allSegments = document.querySelectorAll('.sentence-segment');
+            if (allSegments[qData.correctAnswer]) {
+                allSegments[qData.correctAnswer].classList.add('correct');
+            }
+        } else {
+            const allBtns = document.querySelectorAll('.option-btn');
+            if (allBtns[qData.correctAnswer]) {
+                allBtns[qData.correctAnswer].classList.add('correct');
+            }
+        }
+    }
+
+    showFeedback(isCorrect, qData);
+}
+
+function showFeedback(isCorrect, qData) {
+    const overlay = document.getElementById('feedback-overlay');
+    document.getElementById('feedback-status').textContent = isCorrect ? 'Correct!' : 'Incorrect';
+    document.getElementById('feedback-status').style.color = isCorrect ? 'var(--success)' : 'var(--error)';
+
+    const correctContainer = document.getElementById('feedback-correct-answer');
+    if (!isCorrect) {
+        // If ordered/advanced, we might default to just showing explanation or finding the text
+        let correctText = '';
+        if (qData.type === 'sentence_ordering') correctText = "See ordering above";
+        else if (qData.type === 'error_recognition') correctText = qData.segments[qData.correctAnswer].text;
+        else correctText = qData.options[qData.correctAnswer];
+
+        correctContainer.innerHTML = `Correct Answer: ${correctText}`;
+        correctContainer.style.display = 'block';
+    } else {
+        correctContainer.style.display = 'none';
+    }
+
+    document.getElementById('feedback-explanation').innerHTML = qData.solution;
+    renderMath();
+
+    const totalQ = window.questions[currentSubject][currentTest].questions.length;
+    document.querySelector('.btn-next').textContent = (currentQuestionIndex === totalQ - 1) ? 'View Results' : 'Next Question →';
+    overlay.classList.add('active');
+}
+
+function nextQuestion() {
+    const totalQ = window.questions[currentSubject][currentTest].questions.length;
+    if (currentQuestionIndex < totalQ - 1) {
+        currentQuestionIndex++;
+        loadQuestion();
+    } else {
+        finishExam();
+    }
+}
+
+function finishExam() {
+    navTo('results');
+    const totalQ = window.questions[currentSubject][currentTest].questions.length;
+    document.getElementById('score-display').textContent = `${score}/${totalQ}`;
+
+    const pct = (score / totalQ) * 100;
+    let rating = 'Keep Practicing';
+    if (pct >= 90) rating = 'Excellent (Elite Standard)';
+    else if (pct >= 80) rating = 'Very Good (Advanced)';
+    else if (pct >= 60) rating = 'Good (Proficient)';
+
+    document.getElementById('rating-text').textContent = rating;
+}
+
+// Window click for modal close
+window.onclick = function (event) {
+    const quickRefModal = document.getElementById('quick-ref-modal');
+    const billingModal = document.getElementById('billing-password-modal');
+    const addSessionModal = document.getElementById('billing-add-modal');
+    if (event.target === quickRefModal) {
+        closeQuickRef();
+    }
+    if (event.target === billingModal) {
+        closeBillingPasswordModal();
+    }
+    if (event.target === addSessionModal) {
+        closeBillingAddSessionModal();
+    }
+}
+
+function switchQuickRefTab(tabId) {
+    // Hide all sections - using class toggle for animation support
+    document.querySelectorAll('.ref-section').forEach(el => {
+        if (el.id === tabId) {
+            el.classList.add('active');
+            el.style.display = 'block'; // Ensure display is set
+        } else {
+            el.classList.remove('active');
+            el.style.display = 'none';
+        }
+    });
+
+    // Update Sidebar Navigation
+    const buttons = document.querySelectorAll('.ref-nav-item');
+    buttons.forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(tabId)) {
+            btn.classList.add('active');
+        }
+    });
+
+    // Ensure MathJax renders on the newly visible content
+    if (typeof renderMath === 'function') renderMath();
+}
+
+// SKIP LOGIC
+let hasSeenSkipWarning = false;
+
+function handleSkipClick() {
+    if (hasSeenSkipWarning) {
+        confirmSkip();
+    } else {
+        const modal = document.getElementById('skip-modal');
+        modal.classList.remove('hidden');
+        // Small delay to allow display flex to apply before opacity transition
+        setTimeout(() => {
+            modal.classList.add('active');
+        }, 10);
+    }
+}
+
+function closeSkipModal() {
+    const modal = document.getElementById('skip-modal');
+    modal.classList.remove('active');
+    // Wait for transition to finish before hiding
+    setTimeout(() => {
+        modal.classList.add('hidden');
+    }, 300);
+}
+
+function confirmSkip() {
+    hasSeenSkipWarning = true;
+    closeSkipModal();
+
+    const totalQ = window.questions[currentSubject][currentTest].questions.length;
+    if (currentQuestionIndex < totalQ - 1) {
+        currentQuestionIndex++;
+        loadQuestion();
+    } else {
+        finishExam();
+    }
+}

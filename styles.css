@@ -407,7 +407,7 @@ body {
 
 .billing-payment-controls {
   margin-bottom: 1.5rem;
-  padding: 1rem 1.25rem;
+  padding: 0.9rem 1rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-card);
@@ -439,22 +439,22 @@ body {
 }
 
 .billing-method-details {
-  margin-top: 0.65rem;
+  margin-top: 0.55rem;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.6rem 0.75rem;
+  gap: 0.08rem;
+  padding: 0.52rem 0.65rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-secondary);
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: 0.83rem;
 }
 
 .billing-proof-row {
-  margin-top: 0.65rem;
+  margin-top: 0.5rem;
   display: flex;
-  gap: 0.65rem;
+  gap: 0.55rem;
   flex-wrap: wrap;
   align-items: center;
 }
@@ -464,11 +464,13 @@ body {
 }
 
 .billing-proof-input {
+  -webkit-appearance: none;
+  appearance: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-primary);
   color: var(--text-primary);
-  padding: 0.38rem;
+  padding: 0.32rem;
   min-width: 260px;
   max-width: 460px;
   flex: 1 1 260px;
@@ -491,19 +493,60 @@ body {
 }
 
 .billing-proof-note {
-  margin-top: 0.4rem;
+  margin-top: 0.26rem;
   color: var(--text-secondary);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+}
+
+.billing-proof-file-state {
+  margin-top: 0.16rem;
+  color: var(--text-secondary);
+  font-size: 0.79rem;
+  font-weight: 600;
+}
+
+.billing-proof-file-state.ready {
+  color: var(--billing-paid);
+}
+
+.billing-bundle-chip {
+  margin-top: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #166534;
+  background: rgba(34, 197, 94, 0.12);
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+  font-size: 0.77rem;
+  font-weight: 700;
+}
+
+[data-theme="dark"] .billing-bundle-chip {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(34, 197, 94, 0.35);
 }
 
 .billing-pay-select {
+  -webkit-appearance: none;
+  appearance: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-primary);
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-secondary) 50%), linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
+  background-position: calc(100% - 14px) calc(50% - 3px), calc(100% - 9px) calc(50% - 3px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
   color: var(--text-primary);
-  padding: 0.58rem 0.7rem;
+  padding: 0.52rem 1.9rem 0.52rem 0.65rem;
   min-width: 90px;
   width: 100%;
+}
+
+.billing-pay-select option {
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
 
 .billing-pay-btn {
@@ -542,14 +585,14 @@ body {
 }
 
 .billing-pricing-note {
-  margin-top: 0.65rem;
+  margin-top: 0.45rem;
   color: var(--text-secondary);
-  font-size: 0.86rem;
+  font-size: 0.83rem;
   font-weight: 600;
 }
 
 .billing-discount-meter {
-  margin-top: 0.65rem;
+  margin-top: 0.45rem;
 }
 
 .billing-discount-track {
@@ -569,9 +612,9 @@ body {
 }
 
 .billing-discount-text {
-  margin-top: 0.45rem;
+  margin-top: 0.3rem;
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
 }
 
@@ -711,6 +754,11 @@ body {
 .billing-methods-card {
   padding: 1.5rem;
   margin-bottom: 2rem;
+}
+
+.billing-card-highlight {
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.38), var(--shadow-sm);
+  transition: box-shadow var(--transition-base);
 }
 
 .payment-methods-grid {

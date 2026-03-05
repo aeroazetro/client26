@@ -15,7 +15,7 @@ const BILLING_CLIENT_PASSWORD = 'climb123'; // Change client password here.
 const BILLING_TUTOR_PASSWORD = 'teach123'; // Change tutor password here.
 const BILLING_STORAGE_KEY = 'billingSessionsStateV1';
 const BILLING_STORAGE_VERSION_KEY = 'billingSessionsStateVersionV1';
-const BILLING_STORAGE_VERSION = '2026-03-06-proof-pending-flow';
+const BILLING_STORAGE_VERSION = '2026-03-06-history-topic-hours';
 const BILLING_ROLE_KEY = 'billingRole';
 let billingRole = sessionStorage.getItem(BILLING_ROLE_KEY) || '';
 let billingUnlocked = billingRole === 'client' || billingRole === 'tutor';
@@ -119,12 +119,28 @@ function parseBillingSessionsCSV(data) {
     if (!data) return [];
     const lines = data.trim().split('\n').slice(1);
     return lines.map((line, idx) => {
-        const [date, time, tutee, sessions, status] = line.split(',');
+        const parts = line.split(',');
+        const date = parts[0] || '';
+        const time = parts[1] || '';
+        const tutee = parts[2] || '';
+        let hours = '1';
+        let topic = '';
+        let status = 'unpaid';
+
+        if (parts.length >= 6) {
+            hours = parts[3] || '1';
+            topic = parts[4] || '';
+            status = parts[5] || 'unpaid';
+        } else if (parts.length >= 5) {
+            hours = parts[3] || '1';
+            status = parts[4] || 'unpaid';
+        }
         return normalizeBillingRow({
             date,
             time,
             tutee,
-            sessions,
+            hours,
+            topic,
             status
         }, idx);
     }).filter(item => item.date && item.time && item.tutee);
@@ -156,9 +172,11 @@ function initPaymentCountSelector() {
     if (proofInput) {
         proofInput.addEventListener('change', () => {
             setBillingPaymentStatus('');
+            updateProofFileState();
         });
     }
     renderPaymentMethodDetails();
+    updateProofFileState();
     updateDiscountMeter();
 }
 
@@ -207,7 +225,7 @@ async function loadBillingSessionsFromSupabase() {
     if (!hasSupabaseBilling()) return [];
     const { data, error } = await supabaseClient
         .from(BILLING_TABLE)
-        .select('id,date,time,tutee,sessions,status,sort_order,payment_batch_id,payment_method,payment_amount,payment_account_name,payment_account_number,proof_path,proof_uploaded_at,approved_at')
+        .select('id,date,time,tutee,sessions,hours,topic,status,sort_order,payment_batch_id,payment_method,payment_amount,payment_account_name,payment_account_number,proof_path,proof_uploaded_at,approved_at')
         .order('date', { ascending: true })
         .order('time', { ascending: true })
         .order('sort_order', { ascending: true });
@@ -219,6 +237,8 @@ async function loadBillingSessionsFromSupabase() {
         time: row.time,
         tutee: row.tutee,
         sessions: row.sessions,
+        hours: row.hours,
+        topic: row.topic,
         status: row.status,
         sort_order: row.sort_order,
         payment_batch_id: row.payment_batch_id,
@@ -240,13 +260,15 @@ async function seedSupabaseBilling(seedRows) {
         time: row.time,
         tutee: row.tutee,
         sessions: 1,
+        hours: row.hours,
+        topic: row.topic,
         status: row.status,
         sort_order: idx
     }));
     const { data, error } = await supabaseClient
         .from(BILLING_TABLE)
         .insert(payload)
-        .select('id,date,time,tutee,sessions,status,sort_order,payment_batch_id,payment_method,payment_amount,payment_account_name,payment_account_number,proof_path,proof_uploaded_at,approved_at');
+        .select('id,date,time,tutee,sessions,hours,topic,status,sort_order,payment_batch_id,payment_method,payment_amount,payment_account_name,payment_account_number,proof_path,proof_uploaded_at,approved_at');
     if (error) throw error;
     return (data || []).map((row, idx) => normalizeBillingRow({
         id: row.id,
@@ -254,6 +276,8 @@ async function seedSupabaseBilling(seedRows) {
         time: row.time,
         tutee: row.tutee,
         sessions: row.sessions,
+        hours: row.hours,
+        topic: row.topic,
         status: row.status,
         sort_order: row.sort_order,
         payment_batch_id: row.payment_batch_id,
@@ -310,11 +334,46 @@ function formatSessionCount(count) {
     return `${count} session${count === 1 ? '' : 's'}`;
 }
 
+function formatHours(hours) {
+    if (!Number.isFinite(hours)) return '1 hr';
+    const normalized = Math.abs(hours % 1) < 0.001 ? String(Math.trunc(hours)) : String(hours);
+    return `${normalized} hr${Number(hours) === 1 ? '' : 's'}`;
+}
+
+function getSessionAmount(item) {
+    return (Number(item.hours) || 1) * SINGLE_SESSION_PRICE;
+}
+
+function calculatePaymentBreakdownForRows(rows) {
+    const rowCount = Array.isArray(rows) ? rows.length : 0;
+    const baseTotal = (rows || []).reduce((sum, item) => sum + getSessionAmount(item), 0);
+    const discount = rowCount >= BUNDLE_SIZE ? Math.floor(rowCount / BUNDLE_SIZE) * (BUNDLE_SIZE * SINGLE_SESSION_PRICE - BUNDLE_PRICE) : 0;
+    const discountedTotal = Math.max(0, baseTotal - discount);
+    return {
+        sessionCount: rowCount,
+        baseTotal,
+        discountedTotal,
+        discount
+    };
+}
+
+function getEarliestUnpaidRows(limit = 10) {
+    return billingSessions
+        .filter(item => item.status === 'unpaid')
+        .sort((a, b) => {
+            const diff = getBillingTimestamp(a) - getBillingTimestamp(b);
+            if (diff !== 0) return diff;
+            return (a.order || 0) - (b.order || 0);
+        })
+        .slice(0, Math.max(0, limit));
+}
+
 function normalizeBillingRow(row, index) {
     const parsedOrder = Number(row.sort_order);
     const normalizedTime = (row.time || '').trim().slice(0, 5);
     const normalizedDate = (row.date || '').trim();
     const normalizedStatus = (row.status || '').trim().toLowerCase();
+    const parsedHours = Number.parseFloat(row.hours);
     return {
         id: Number.isFinite(Number(row.id)) ? Number(row.id) : null,
         date: normalizedDate,
@@ -322,6 +381,8 @@ function normalizeBillingRow(row, index) {
         tutee: (row.tutee || '').trim(),
         // Billing is now strictly tracked per session-log unit for 1-10 payments.
         sessions: 1,
+        hours: Number.isFinite(parsedHours) && parsedHours > 0 ? parsedHours : 1,
+        topic: (row.topic || '').trim(),
         status: normalizedStatus === 'paid' || normalizedStatus === 'pending' ? normalizedStatus : 'unpaid',
         paymentBatchId: (row.payment_batch_id || '').trim() || null,
         paymentMethod: (row.payment_method || '').trim() || null,
@@ -337,40 +398,34 @@ function normalizeBillingRow(row, index) {
     };
 }
 
-function calculatePaymentBreakdown(sessionCount) {
-    const sanitizedCount = Math.max(0, Math.floor(sessionCount));
-    const bundles = Math.floor(sanitizedCount / BUNDLE_SIZE);
-    const singles = sanitizedCount % BUNDLE_SIZE;
-    const baseTotal = sanitizedCount * SINGLE_SESSION_PRICE;
-    const discountedTotal = (bundles * BUNDLE_PRICE) + (singles * SINGLE_SESSION_PRICE);
-    return {
-        sessionCount: sanitizedCount,
-        bundles,
-        singles,
-        baseTotal,
-        discountedTotal,
-        discount: Math.max(0, baseTotal - discountedTotal)
-    };
-}
-
 function updateDiscountMeter() {
     const select = document.getElementById('billing-pay-count');
     const fill = document.getElementById('billing-discount-fill');
     const meterText = document.getElementById('billing-discount-text');
+    const bundleChip = document.getElementById('billing-bundle-chip');
     if (!select || !fill || !meterText) return;
 
     const selectedCount = Number.parseInt(select.value || '1', 10);
-    const breakdown = calculatePaymentBreakdown(selectedCount);
+    const previewRows = getEarliestUnpaidRows(selectedCount);
+    const breakdown = calculatePaymentBreakdownForRows(previewRows);
     const progressPct = Math.max(0, Math.min(100, (breakdown.sessionCount / BUNDLE_SIZE) * 100));
     fill.style.width = `${progressPct}%`;
 
     if (breakdown.sessionCount < BUNDLE_SIZE) {
         const remaining = BUNDLE_SIZE - breakdown.sessionCount;
-        meterText.textContent = `Paying now: ${formatPeso(breakdown.discountedTotal)}. Add ${remaining} more to unlock ₱500 bundle discount.`;
+        meterText.textContent = `Pay now: ${formatPeso(breakdown.discountedTotal)}. +${remaining} to unlock ₱500 discount.`;
+        if (bundleChip) {
+            bundleChip.classList.add('hidden');
+            bundleChip.textContent = '';
+        }
         return;
     }
 
-    meterText.textContent = `Bundle unlocked: ${formatPeso(breakdown.discountedTotal)} total. You save ${formatPeso(breakdown.discount)}.`;
+    meterText.textContent = `Bundle total: ${formatPeso(breakdown.discountedTotal)}.`;
+    if (bundleChip) {
+        bundleChip.classList.remove('hidden');
+        bundleChip.textContent = `Bundle Applied: -${formatPeso(breakdown.discount)}`;
+    }
 }
 
 function getSelectedPaymentCount() {
@@ -391,9 +446,24 @@ function renderPaymentMethodDetails() {
     const details = PAYMENT_METHOD_DETAILS[methodKey];
     target.innerHTML = `
         <strong>${details.label}</strong>
-        <span>${details.accountNumber}</span>
-        <span>${details.accountName}</span>
+        <span>${details.accountNumber} • ${details.accountName}</span>
     `;
+}
+
+function updateProofFileState() {
+    const state = document.getElementById('billing-proof-file-state');
+    const proofInput = document.getElementById('billing-proof-file');
+    if (!state || !proofInput) return;
+
+    const file = proofInput.files && proofInput.files[0] ? proofInput.files[0] : null;
+    if (!file) {
+        state.textContent = 'No file selected.';
+        state.classList.remove('ready');
+        return;
+    }
+    const mb = (file.size / (1024 * 1024)).toFixed(2);
+    state.textContent = `Ready: ${file.name} (${mb}MB)`;
+    state.classList.add('ready');
 }
 
 function createPaymentBatchId() {
@@ -477,6 +547,36 @@ function groupPendingBatches(rows) {
     return [...grouped.values()].sort((a, b) => {
         const at = Date.parse(a.submittedAt || '') || 0;
         const bt = Date.parse(b.submittedAt || '') || 0;
+        return bt - at;
+    });
+}
+
+function groupApprovedBatches(rows) {
+    const approved = rows.filter(item => item.status === 'paid' && item.paymentBatchId && item.proofPath);
+    const grouped = new Map();
+    approved.forEach(item => {
+        const key = item.paymentBatchId;
+        if (!grouped.has(key)) {
+            grouped.set(key, {
+                batchId: key,
+                sessions: [],
+                method: item.paymentMethod || '',
+                amount: Number.isFinite(Number(item.paymentAmount)) ? Number(item.paymentAmount) : 0,
+                proofPath: item.proofPath || '',
+                submittedAt: item.proofUploadedAt || '',
+                approvedAt: item.approvedAt || '',
+                accountName: item.paymentAccountName || '',
+                accountNumber: item.paymentAccountNumber || ''
+            });
+        }
+        grouped.get(key).sessions.push(item);
+        if (item.approvedAt && !grouped.get(key).approvedAt) {
+            grouped.get(key).approvedAt = item.approvedAt;
+        }
+    });
+    return [...grouped.values()].sort((a, b) => {
+        const at = Date.parse(a.approvedAt || a.submittedAt || '') || 0;
+        const bt = Date.parse(b.approvedAt || b.submittedAt || '') || 0;
         return bt - at;
     });
 }
@@ -572,7 +672,8 @@ function renderBillingList(targetId, sessions, emptyText, sortOrder = 'desc') {
         return direction * ((a.order || 0) - (b.order || 0));
     });
     sorted.forEach(item => {
-        const amount = item.sessions * SINGLE_SESSION_PRICE;
+        const amount = getSessionAmount(item);
+        const topicText = item.topic ? ` • ${item.topic}` : '';
         const entry = document.createElement('div');
         entry.className = `billing-item ${item.status}`;
         entry.innerHTML = `
@@ -581,7 +682,7 @@ function renderBillingList(targetId, sessions, emptyText, sortOrder = 'desc') {
                 <span class="billing-status ${item.status}">${item.status.toUpperCase()}</span>
             </div>
             <div class="billing-item-bottom">
-                <span>${item.tutee} • ${formatSessionCount(item.sessions)}</span>
+                <span>${item.tutee} • ${formatHours(item.hours)}${topicText}</span>
                 <strong>${formatPeso(amount)}</strong>
             </div>
         `;
@@ -623,7 +724,7 @@ function renderPendingPayments() {
         const viewBtn = document.createElement('button');
         viewBtn.className = 'btn btn-secondary';
         viewBtn.textContent = 'View Proof';
-        viewBtn.onclick = () => openPendingProof(group.batchId);
+        viewBtn.onclick = () => openPaymentProof(group.batchId);
         actions.appendChild(viewBtn);
 
         if (isTutorAccess()) {
@@ -638,9 +739,50 @@ function renderPendingPayments() {
     });
 }
 
+function renderPaymentHistory() {
+    const list = document.getElementById('billing-history-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    const groups = groupApprovedBatches(billingSessions);
+    if (!groups.length) {
+        const empty = document.createElement('div');
+        empty.className = 'billing-empty';
+        empty.textContent = 'No approved payment history with proofs yet.';
+        list.appendChild(empty);
+        return;
+    }
+
+    groups.forEach(group => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'billing-pending-item';
+        const methodLabel = PAYMENT_METHOD_DETAILS[group.method] ? PAYMENT_METHOD_DETAILS[group.method].label : 'Payment';
+        wrapper.innerHTML = `
+            <div class="billing-pending-top">
+                <strong>${formatSessionCount(group.sessions.length)} • ${formatPeso(group.amount || 0)}</strong>
+                <span class="billing-status paid">PAID</span>
+            </div>
+            <div class="billing-pending-meta">
+                <span>${methodLabel} • ${group.accountNumber || ''} • ${group.accountName || ''}</span>
+                <span>Submitted: ${formatPendingAge(group.submittedAt)}</span>
+                <span>Approved: ${formatPendingAge(group.approvedAt)}</span>
+            </div>
+            <div class="billing-pending-actions"></div>
+        `;
+
+        const actions = wrapper.querySelector('.billing-pending-actions');
+        const viewBtn = document.createElement('button');
+        viewBtn.className = 'btn btn-secondary';
+        viewBtn.textContent = 'View Proof';
+        viewBtn.onclick = () => openPaymentProof(group.batchId);
+        actions.appendChild(viewBtn);
+        list.appendChild(wrapper);
+    });
+}
+
 function renderBillingDashboard() {
     const unpaidSessions = billingSessions.filter(item => item.status === 'unpaid');
-    const unpaidTotal = unpaidSessions.reduce((sum, item) => sum + (item.sessions * SINGLE_SESSION_PRICE), 0);
+    const unpaidTotal = unpaidSessions.reduce((sum, item) => sum + getSessionAmount(item), 0);
     const clientControls = document.getElementById('billing-client-controls');
     const adminControls = document.getElementById('billing-admin-controls');
     const clientNote = document.getElementById('billing-client-note');
@@ -663,6 +805,7 @@ function renderBillingDashboard() {
     renderBillingList('billing-unpaid-list', unpaidSessions, 'No unpaid sessions right now.', 'asc');
     renderBillingList('billing-log-list', billingSessions, 'No session logs found.', 'desc');
     renderPendingPayments();
+    renderPaymentHistory();
     renderPaymentMethodDetails();
     updateDiscountMeter();
 }
@@ -678,13 +821,7 @@ async function submitPaymentProof() {
         return;
     }
 
-    const unpaidSorted = billingSessions
-        .filter(item => item.status === 'unpaid')
-        .sort((a, b) => {
-            const diff = getBillingTimestamp(a) - getBillingTimestamp(b);
-            if (diff !== 0) return diff;
-            return (a.order || 0) - (b.order || 0);
-        });
+    const unpaidSorted = getEarliestUnpaidRows(9999);
 
     if (unpaidSorted.length < requested) {
         setBillingPaymentStatus(`Only ${unpaidSorted.length} unpaid session(s) available.`, true);
@@ -708,7 +845,7 @@ async function submitPaymentProof() {
         return;
     }
 
-    const breakdown = calculatePaymentBreakdown(requested);
+    const breakdown = calculatePaymentBreakdownForRows(payNow);
     const batchId = createPaymentBatchId();
     const uploadedAt = new Date().toISOString();
 
@@ -751,9 +888,16 @@ async function submitPaymentProof() {
     });
 
     if (proofInput) proofInput.value = '';
+    updateProofFileState();
     saveBillingSessions();
     renderBillingDashboard();
     setBillingPaymentStatus(`Proof submitted for ${formatSessionCount(requested)} (${formatPeso(breakdown.discountedTotal)}). Status is now PENDING.`, false);
+    const pendingCard = document.getElementById('billing-pending-card');
+    if (pendingCard) {
+        pendingCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        pendingCard.classList.add('billing-card-highlight');
+        setTimeout(() => pendingCard.classList.remove('billing-card-highlight'), 1400);
+    }
 }
 
 async function approvePendingBatch(batchId) {
@@ -792,10 +936,10 @@ async function approvePendingBatch(batchId) {
     setBillingPaymentStatus(`Approved ${formatSessionCount(pendingRows.length)} from pending batch.`, false);
 }
 
-async function openPendingProof(batchId) {
+async function openPaymentProof(batchId) {
     const row = billingSessions.find(item => item.paymentBatchId === batchId && item.proofPath);
     if (!row || !row.proofPath) {
-        setBillingPaymentStatus('No proof file found for this pending batch.', true);
+        setBillingPaymentStatus('No proof file found for this payment batch.', true);
         return;
     }
 
@@ -874,8 +1018,8 @@ async function applyBulkPayment() {
     saveBillingSessions();
     renderBillingDashboard();
 
-    const paidCount = payNow.reduce((sum, item) => sum + item.sessions, 0);
-    const breakdown = calculatePaymentBreakdown(paidCount);
+    const paidCount = payNow.length;
+    const breakdown = calculatePaymentBreakdownForRows(payNow);
     const remaining = billingSessions.filter(item => item.status === 'unpaid').length;
     const discountText = breakdown.discount > 0 ? ` Saved ${formatPeso(breakdown.discount)}.` : '';
     const modeText = billingPersistenceMode === 'supabase' ? 'Synced to Supabase.' : 'Saved locally.';
@@ -947,12 +1091,16 @@ function openBillingAddSessionModal() {
     const dateInput = document.getElementById('billing-add-date');
     const timeInput = document.getElementById('billing-add-time');
     const tuteeInput = document.getElementById('billing-add-tutee');
+    const topicInput = document.getElementById('billing-add-topic');
+    const hoursInput = document.getElementById('billing-add-hours');
     const statusInput = document.getElementById('billing-add-status');
     const now = new Date();
 
     if (dateInput && !dateInput.value) dateInput.value = now.toISOString().slice(0, 10);
     if (timeInput && !timeInput.value) timeInput.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     if (tuteeInput && !tuteeInput.value.trim()) tuteeInput.value = 'JC';
+    if (topicInput && !topicInput.value) topicInput.value = '';
+    if (hoursInput && !hoursInput.value) hoursInput.value = '1';
     if (statusInput) statusInput.value = 'unpaid';
 
     setBillingAddError('');
@@ -978,16 +1126,24 @@ async function submitBillingAddSession() {
     const dateInput = document.getElementById('billing-add-date');
     const timeInput = document.getElementById('billing-add-time');
     const tuteeInput = document.getElementById('billing-add-tutee');
+    const topicInput = document.getElementById('billing-add-topic');
+    const hoursInput = document.getElementById('billing-add-hours');
     const statusInput = document.getElementById('billing-add-status');
-    if (!dateInput || !timeInput || !tuteeInput || !statusInput) return;
+    if (!dateInput || !timeInput || !tuteeInput || !topicInput || !hoursInput || !statusInput) return;
 
     const date = (dateInput.value || '').trim();
     const time = (timeInput.value || '').trim().slice(0, 5);
     const tutee = (tuteeInput.value || '').trim();
+    const topic = (topicInput.value || '').trim();
+    const hours = Number.parseFloat(hoursInput.value || '1');
     const status = statusInput.value === 'paid' ? 'paid' : 'unpaid';
 
     if (!date || !time || !tutee) {
         setBillingAddError('Fill date, time, and tutee.');
+        return;
+    }
+    if (!Number.isFinite(hours) || hours <= 0 || Math.round(hours * 2) !== hours * 2) {
+        setBillingAddError('Hours must be in 0.5 steps (0.5, 1, 1.5, 2, ...).');
         return;
     }
 
@@ -997,6 +1153,8 @@ async function submitBillingAddSession() {
         date,
         time,
         tutee,
+        topic,
+        hours,
         sessions: 1,
         status,
         sort_order: nextOrder
@@ -1009,11 +1167,13 @@ async function submitBillingAddSession() {
                 date,
                 time,
                 tutee,
+                topic,
+                hours,
                 sessions: 1,
                 status,
                 sort_order: nextOrder
             })
-            .select('id,date,time,tutee,sessions,status,sort_order,payment_batch_id,payment_method,payment_amount,payment_account_name,payment_account_number,proof_path,proof_uploaded_at,approved_at')
+            .select('id,date,time,tutee,sessions,hours,topic,status,sort_order,payment_batch_id,payment_method,payment_amount,payment_account_name,payment_account_number,proof_path,proof_uploaded_at,approved_at')
             .single();
         if (error) {
             setBillingAddError(`Supabase insert failed: ${error.message}`);
@@ -1027,7 +1187,7 @@ async function submitBillingAddSession() {
     closeBillingAddSessionModal();
     renderBillingDashboard();
     const modeText = billingPersistenceMode === 'supabase' ? 'Synced to Supabase.' : 'Saved locally.';
-    setBillingPaymentStatus(`Added session for ${tutee} on ${date} ${time}. ${modeText}`);
+    setBillingPaymentStatus(`Added ${formatHours(hours)} for ${tutee} on ${date} ${time}.${topic ? ` Topic: ${topic}.` : ''} ${modeText}`);
 }
 
 function renderMath() {

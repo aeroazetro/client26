@@ -640,7 +640,7 @@ body {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 0.75rem 0.9rem;
+  padding: 0.75rem 0.9rem 0.8rem;
 }
 
 .billing-item.paid {
@@ -651,27 +651,55 @@ body {
   border-color: var(--border);
 }
 
-.billing-item-top,
-.billing-item-bottom {
+.billing-item-head,
+.billing-item-top {
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
   align-items: center;
 }
 
-.billing-item-top {
-  margin-bottom: 0.3rem;
+.billing-item-head {
+  margin-bottom: 0.22rem;
 }
 
 .billing-item-date {
   color: var(--text-secondary);
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
-.billing-item-bottom {
+.billing-item-amount {
   color: var(--text-primary);
-  font-size: 0.95rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.billing-item-top {
+  margin-bottom: 0.45rem;
+}
+
+.billing-item-name {
+  color: var(--text-primary);
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.billing-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.billing-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: var(--bg-card);
 }
 
 .billing-status {
@@ -740,6 +768,19 @@ body {
   background: var(--bg-secondary);
   max-height: 65vh;
   object-fit: contain;
+}
+
+.billing-history-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.billing-history-filter-wrap {
+  min-width: 180px;
+  width: 220px;
 }
 
 .billing-empty {
@@ -1207,6 +1248,10 @@ body {
   height: auto;
   padding: 1.5rem;
   overflow: visible;
+}
+
+.billing-pay-content {
+  max-width: 680px;
 }
 
 .billing-password-input {
